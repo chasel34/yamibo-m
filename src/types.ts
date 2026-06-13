@@ -1,0 +1,218 @@
+// Shared UI-model types. The API layer (src/api.ts) maps the loosely-typed Discuz
+// mobile JSON into these shapes, so screens/components consume strong types.
+
+export interface NavAuthor {
+  name?: string;
+  uid?: string;
+  group?: string;
+}
+
+// ---- Forum index ----
+export interface BoardSub {
+  fid: string;
+  name: string;
+  today: number;
+}
+export interface BoardSummary {
+  id: string;
+  fid: string;
+  name: string;
+  desc: string;
+  today: number;
+  threads?: string;
+  posts?: string;
+  iconUrl?: string | null;
+  subs: BoardSub[];
+}
+export interface ForumGroup {
+  id: string;
+  name: string;
+  desc: string;
+  boards: BoardSummary[];
+}
+export interface ForumIndexData {
+  groups: ForumGroup[];
+  me: { uid?: string; name?: string; avatar?: string };
+}
+
+// ---- Board (forumdisplay) ----
+export interface ThreadRow {
+  id: string;
+  tid: string;
+  typeid?: string;
+  tag: string;
+  title: string;
+  author: NavAuthor;
+  time: string;
+  replies: number;
+  views?: string;
+  pinned: boolean;
+  excerpt: string;
+  hasImage: boolean;
+  boardName?: string;
+}
+export interface BoardInfo {
+  fid: string;
+  name: string;
+  desc: string;
+  rules?: string;
+}
+export interface ThreadType {
+  id: string;
+  name: string;
+}
+export interface BoardData {
+  board: BoardInfo;
+  threads: ThreadRow[];
+  types: ThreadType[];
+  page: number;
+  tpp: number;
+  hasMore: boolean;
+}
+
+// ---- Thread (viewthread) ----
+export type Block =
+  | { t: 'text'; v: string }
+  | { t: 'img'; src: string | null; cap: string }
+  | { t: 'quote'; who: string; v: string };
+
+export interface Floor {
+  pid?: string;
+  floor: number;
+  op: boolean;
+  user: NavAuthor;
+  time: string;
+  blocks: Block[];
+}
+export interface ThreadInfo {
+  tid: string;
+  title: string;
+  replies: number;
+  views?: string;
+  pinned: boolean;
+  author: NavAuthor;
+  time: string;
+}
+export interface ThreadImage {
+  src: string | null;
+  cap: string;
+}
+export interface ThreadData {
+  thread: ThreadInfo;
+  floors: Floor[];
+  images: ThreadImage[];
+  ppp: number;
+  page: number;
+}
+
+// ---- Profile ----
+export interface ProfileStats {
+  themes: number;
+  replies: number;
+  collections: number;
+  follow: number;
+  fans: number;
+}
+export interface UserProfile {
+  id?: string;
+  uid?: string;
+  name?: string;
+  avatar?: string;
+  group?: string;
+  register?: string;
+  bio?: string;
+  gender?: string;
+  constellation?: string;
+  location?: string;
+  stats: ProfileStats;
+  credits?: number;
+  self?: boolean;
+}
+
+// ---- Lists ----
+export interface CollectionItem {
+  id: string;
+  tid: string;
+  tag: string;
+  title: string;
+  author: { name?: string };
+  time: string;
+  replies: number;
+  excerpt: string;
+}
+export interface ListResult<T> {
+  list: T[];
+  count: number;
+}
+export interface Reminder {
+  id: string;
+  type: string;
+  icon: string;
+  unread: boolean;
+  who: string;
+  text: string;
+  time: string;
+}
+export interface PMItem {
+  id: string;
+  user: NavAuthor;
+  last: string;
+  time: string;
+  unread: number;
+}
+
+// ---- Session ----
+export interface Notice {
+  newpush: string;
+  newpm: string;
+  newprompt: string;
+  newmypost: string;
+}
+export interface Me {
+  uid: string;
+  username: string;
+  avatar: string | null;
+}
+
+// ---- Local browse history ----
+export interface HistoryItem {
+  tid: string;
+  title?: string;
+  author?: NavAuthor;
+  ts: number;
+}
+
+// ---- Theme ----
+export type ThemeName = 'light' | 'dark';
+
+// ---- Navigation ----
+// A board reference as it travels through navigation params (looser than BoardInfo).
+export interface BoardNavParam {
+  fid?: string;
+  name?: string;
+  desc?: string;
+  rules?: string;
+}
+// A thread reference as passed from a feed row / history / collection.
+export interface ThreadNavParam {
+  tid?: string;
+  id?: string;
+  title?: string;
+  author?: NavAuthor;
+  pinned?: boolean;
+  replies?: number;
+  time?: string;
+  views?: string;
+}
+export type RootStackParamList = {
+  login: undefined;
+  tabs: undefined;
+  board: { board?: BoardNavParam; fid?: string } | undefined;
+  thread: { thread?: ThreadNavParam; board?: BoardNavParam } | undefined;
+  profile: { uid?: string; self?: boolean } | undefined;
+  settings: undefined;
+  collections: undefined;
+  history: undefined;
+  about: undefined;
+  viewer: { images?: ThreadImage[]; index?: number } | undefined;
+};
