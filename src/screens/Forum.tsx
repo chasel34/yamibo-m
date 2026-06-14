@@ -1,37 +1,13 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, RefreshControl, Image } from 'react-native';
+import { View, Text, ScrollView, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Screen from '../components/Screen';
-import Icon from '../components/Icon';
-import { IconBtn, Kicker } from '../components/ui';
+import { IconBtn, Kicker, BoardRow } from '../components/ui';
 import { Loader, ErrorView } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
 import { getForumIndex } from '../api';
 import type { ForumIndexData, BoardSummary } from '../types';
-
-function BoardRow({ b, onOpen, last }: { b: BoardSummary; onOpen: (b: BoardSummary) => void; last?: boolean }) {
-  const { t } = useTheme();
-  const [iconErr, setIconErr] = React.useState(false);
-  return (
-    <View>
-      <Pressable onPress={() => onOpen(b)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
-        {b.iconUrl && !iconErr
-          ? <Image source={{ uri: b.iconUrl }} onError={() => setIconErr(true)} style={{ width: 24, height: 24, borderRadius: 6 }} />
-          : <Icon name="forum" size={22} stroke={1.6} color={t.inkSoft} />}
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 3 }}>
-            <Text style={{ fontFamily: FONTS.head, fontSize: 16.5, fontWeight: '700', color: t.ink }}>{b.name}</Text>
-            {b.today > 0 ? <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.accentInk }}>{b.today}</Text> : null}
-          </View>
-          {b.desc ? <Text numberOfLines={1} style={{ fontFamily: FONTS.body, fontSize: 13.5, color: t.muted }}>{b.desc}</Text> : null}
-        </View>
-        <Icon name="chevRight" size={18} color={t.faint} />
-      </Pressable>
-      {!last && <View style={{ height: 1, backgroundColor: t.line, marginLeft: 58, marginRight: 22 }} />}
-    </View>
-  );
-}
 
 export default function ForumScreen() {
   const nav = useNav();

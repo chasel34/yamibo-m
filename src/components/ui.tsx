@@ -195,6 +195,82 @@ export function FeedItem({ t: th, onOpen, showBoard = false }: { t: FeedThread; 
   );
 }
 
+// ===================== Board icon (line icons, per design app/data.jsx) =====================
+// 真实板块不带设计稿里的 icon 名，按板块名关键字映射到同一套描边图标。顺序敏感：
+// 更具体的信号（TXT/图/动漫…）先判，最后兜底 forum。
+export function boardIcon(name?: string): string {
+  const n = name || '';
+  const has = (...ss: string[]) => ss.some((s) => n.includes(s));
+  if (has('TXT', 'txt', '打包', '离线', '離線', '下载', '下載')) return 'doc';
+  if (has('图', '圖')) return 'eye';
+  if (has('动漫', '動漫', '番', '动画', '動畫')) return 'sparkle';
+  if (has('海域')) return 'wave';
+  if (has('游戏', '遊戲', 'galgame', 'GalGame', 'Galgame', '手游')) return 'game';
+  if (has('影', '剧', '劇', '映', '電影', '电影')) return 'film';
+  if (has('资源', '資源', '交流', '周边', '周邊', '集市')) return 'box';
+  if (has('小说', '小說', '译文', '譯文', '文学', '文學', '漫画', '漫畫', '原创', '原創', '同人', '书', '書')) return 'book';
+  if (has('管理', '站务', '站務', '公告')) return 'bell';
+  if (has('指南', '新人', '报到', '報到', '帮助', '幫助', '问题', '問題')) return 'sprout';
+  if (has('评价', '評價', '世界杯', '专版', '專版', '精华', '精華')) return 'star';
+  return 'forum';
+}
+
+// ===================== Flat board / sub-board row (ported from .flatrow) =====================
+export interface BoardRowItem {
+  fid: string;
+  name: string;
+  desc?: string;
+  today: number;
+}
+export function BoardRow<T extends BoardRowItem>({ b, onOpen, last }: { b: T; onOpen: (b: T) => void; last?: boolean }) {
+  const { t } = useTheme();
+  return (
+    <View>
+      <Pressable onPress={() => onOpen(b)} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
+        <Icon name={boardIcon(b.name)} size={22} stroke={1.6} color={t.inkSoft} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: b.desc ? 3 : 0 }}>
+            <Text style={{ fontFamily: FONTS.head, fontSize: 16.5, fontWeight: '700', color: t.ink }}>{b.name}</Text>
+            {b.today > 0 ? <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.accentInk }}>{b.today}</Text> : null}
+          </View>
+          {b.desc ? <Text numberOfLines={1} style={{ fontFamily: FONTS.body, fontSize: 13.5, color: t.muted }}>{b.desc}</Text> : null}
+        </View>
+        <Icon name="chevRight" size={18} color={t.faint} />
+      </Pressable>
+      {!last && <View style={{ height: 1, backgroundColor: t.line, marginLeft: 58, marginRight: 22 }} />}
+    </View>
+  );
+}
+
+// ===================== Sub-board chip (子板块 · 等分一排, ported from .SubBoardChip) =====================
+export function SubBoardChip<T extends { fid: string; name: string; today: number }>({ s, onOpen }: { s: T; onOpen: (s: T) => void }) {
+  const { t } = useTheme();
+  return (
+    <Pressable onPress={() => onOpen(s)} style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: t.lineStrong }}>
+      <Text numberOfLines={1} style={{ fontFamily: FONTS.head, fontSize: 13.5, fontWeight: '600', color: t.ink, flexShrink: 1 }}>{s.name}</Text>
+      {s.today > 0 ? <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '700', color: t.accentInk }}>{s.today}</Text> : null}
+    </Pressable>
+  );
+}
+
+// ===================== Pinned / notice row (置顶 · 公告, ported from .PinnedRow) =====================
+export interface PinnedRowItem {
+  title: string;
+  kind: 'notice' | 'sticky';
+}
+export function PinnedRow<T extends PinnedRowItem>({ item, onOpen }: { item: T; onOpen: (i: T) => void }) {
+  const { t } = useTheme();
+  const notice = item.kind === 'notice';
+  return (
+    <Pressable onPress={() => onOpen(item)} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, paddingHorizontal: 22 }}>
+      <View style={{ height: 22, paddingHorizontal: 9, borderRadius: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: notice ? t.accent : t.accentSoft }}>
+        <Text style={{ fontFamily: FONTS.head, fontSize: 11, fontWeight: '600', letterSpacing: 0.2, color: notice ? t.onAccent : t.accentInk }}>{notice ? '公告' : '置顶'}</Text>
+      </View>
+      <Text numberOfLines={1} style={{ flex: 1, fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: notice ? t.accentInk : t.ink }}>{item.title}</Text>
+    </Pressable>
+  );
+}
+
 // ===================== Kicker / section label =====================
 export function Kicker({ children, style }: { children?: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   const { t } = useTheme();

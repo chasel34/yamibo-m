@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import { avatarUrl, stripHtml, excerptText, groupTitleText, timeFromUnix, parseMessage, HOST } from './util';
 import type {
   Me, Notice, ForumIndexData, BoardData, ThreadData, ThreadImage,
-  UserProfile, CollectionItem, ListResult, Reminder, PMItem, ThreadType, BoardSummary, ForumGroup,
+  UserProfile, CollectionItem, ListResult, Reminder, PMItem, ThreadType, BoardSummary, ForumGroup, BoardSub, SortMode, PinnedItem,
 } from './types';
 
 export const PROXY = 'http://localhost:8089';
@@ -100,17 +100,33 @@ export async function getForumIndex(): Promise<ForumIndexData> {
 }
 
 // ===================== Board (forumdisplay) =====================
-export async function getBoard(fid: string, page = 1, typeid: string | number = 0): Promise<BoardData> {
+// `sort`（排序模式）走 filter/orderby，`typeid`（作品分类标签）是另一维筛选。
+// 关键：选中 typeid 时必须同时带一个 filter，typeid 才会真正生效（已对线上 API 验证）。
+export async function getBoard(fid: string, page = 1, typeid: string | number = 0, sort: SortMode = '全部'): Promise<BoardData> {
   const params: Record<string, any> = { fid, page };
-  if (typeid && typeid !== 0) { params.typeid = typeid; params.filter = 'typeid'; }
+  const hasType = typeid && typeid !== 0;
+  if (hasType) params.typeid = typeid;
+  switch (sort) {
+    case '最新': params.filter = 'dateline'; params.orderby = 'dateline'; break;
+    case '热门': params.filter = 'heat'; break;
+    case '精华': params.filter = 'digest'; params.digest = '1'; break;
+    default: if (hasType) params.filter = 'typeid'; break; // 全部
+  }
   const v = (await request('forumdisplay', params)).Variables || {};
   const tt: Record<string, string> = v.threadtypes?.types || {};
   const types: ThreadType[] = Object.keys(tt).map((id) => ({ id, name: tt[id] }));
-  // Hide 置顶/全站公告 (displayorder>0) like the official mobile list — the
-  // displayorder=3 ones repeat at the top of every board. They only come back on
-  // page 1, so base hasMore on the raw count, not the filtered list.
+  const subs: BoardSub[] = (v.sublist || []).map((s: any) => ({
+    fid: s.fid, name: s.name, today: parseInt(s.todayposts || '0', 10), iconUrl: s.icon || null,
+  }));
+  // 置顶/公告（displayorder>0）单独抽出做 PinnedRow；type 名为「公告」→ notice，其余 → sticky。
+  // 它们只在第 1 页（无筛选）出现，所以 hasMore 仍按 raw 总数判断，而非过滤后的列表。
   const raw: any[] = v.forum_threadlist || [];
-  const list = raw.filter((t) => parseInt(t.displayorder || '0', 10) <= 0).map((t) => {
+  const isPinned = (t: any) => parseInt(t.displayorder || '0', 10) > 0;
+  const pinned: PinnedItem[] = raw.filter(isPinned).map((t) => ({
+    id: t.tid, tid: t.tid, title: stripHtml(t.subject),
+    kind: tt[t.typeid] === '公告' ? 'notice' : 'sticky',
+  }));
+  const list = raw.filter((t) => !isPinned(t)).map((t) => {
     const excerpt = t.message ? excerptText(t.message)
       : (t.reply && t.reply[0] ? excerptText(t.reply[0].message) : '');
     return {
@@ -132,7 +148,7 @@ export async function getBoard(fid: string, page = 1, typeid: string | number = 
     desc: stripHtml(v.forum?.description || ''),
     rules: v.forum?.rules || '',
   };
-  return { board, threads: list, types, page: parseInt(v.page || page, 10), tpp, hasMore: raw.length >= tpp };
+  return { board, threads: list, pinned, types, subs, page: parseInt(v.page || page, 10), tpp, hasMore: raw.length >= tpp };
 }
 
 // ===================== Thread (viewthread) =====================

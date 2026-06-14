@@ -12,6 +12,7 @@ export interface BoardSub {
   fid: string;
   name: string;
   today: number;
+  iconUrl?: string | null;
 }
 export interface BoardSummary {
   id: string;
@@ -61,10 +62,22 @@ export interface ThreadType {
   id: string;
   name: string;
 }
+// 排序模式（全板块通用）vs 作品分类标签（threadtypes）是两套独立筛选。
+export type SortMode = '全部' | '最新' | '热门' | '精华';
+export const SORT_MODES: SortMode[] = ['全部', '最新', '热门', '精华'];
+// 置顶/公告行（displayorder>0），与普通帖分开渲染。notice=公告（红底强调），sticky=置顶。
+export interface PinnedItem {
+  id: string;
+  tid: string;
+  title: string;
+  kind: 'notice' | 'sticky';
+}
 export interface BoardData {
   board: BoardInfo;
   threads: ThreadRow[];
+  pinned: PinnedItem[];
   types: ThreadType[];
+  subs: BoardSub[];
   page: number;
   tpp: number;
   hasMore: boolean;
