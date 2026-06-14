@@ -24,6 +24,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - tsconfig 故意为 `strict: true` + `noImplicitAny: false` + `useUnknownInCatchVariables: false`（务实平衡：保住 null 安全，又不必给每个回调/catch 标注）。**不要**为"更严格"盲目打开它们，会引入大量噪音。
 - 数据层即类型边界：新接口在 `src/api.ts` 把 Discuz JSON 映射成 `src/types.ts` 的 UI 模型再返回；`request()` 返回 `any` 是有意为之，松散字段在 mapper 里收口。富文本/URL/时间解析在 `src/util.ts`；导航参数类型见 `src/types.ts` 的 `RootStackParamList`（screens 不要再用 `route: any`）。
 
+## Design
+
+- `design/` 是 Claude Design 的设计交付（HTML/JSX 原型 + 截图），是 UI 的**唯一事实来源**，不是要运行的代码——目标是把 `design/project/百合会.html` 及其引入的 `app/*.jsx` 在 RN 里**像素级复刻**。
+- 设计**会迭代**：用户更新设计后，先看 `git diff design/`（重点 `app/screens_*.jsx`）弄清这次改了什么，再据此改 `src/`。不要凭旧印象重做整屏。
+
 ## Conventions
 
 - Conventional Commits（`feat:`/`fix:`/`chore:`/`docs:`…）；仅在被明确要求时提交。
