@@ -101,6 +101,15 @@ const ForumScreen = () => {
   );
 };
 
+// ===================== Sub-board chip (子板块 · 等分一排) =====================
+const SubBoardChip = ({s, onOpen}) => (
+  <div className="click" onClick={()=>onOpen(s)} style={{display:"flex", alignItems:"center", justifyContent:"center", gap:6, height:36, padding:"0 12px",
+    borderRadius:999, border:"1px solid var(--line-strong)", background:"transparent", flex:"1 1 0", minWidth:0}}>
+    <span style={{fontFamily:"var(--font-head)", fontSize:13.5, fontWeight:600, color:"var(--ink)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", minWidth:0}}>{s.name}</span>
+    <span style={{fontFamily:"var(--font-head)", fontSize:12, fontWeight:700, color:"var(--accent-ink)", flex:"0 0 auto"}}>{s.today}</span>
+  </div>
+);
+
 // ===================== Pinned / notice row (置顶 · 公告) =====================
 const PinnedRow = ({item, onOpen}) => {
   const notice = item.kind==="notice";
@@ -177,15 +186,6 @@ const BoardScreen = ({board}) => {
           </div>
         )}
 
-        {/* sub-boards (子板块) — same flat rows as the home board list */}
-        {board.subs && board.subs.length>0 && (
-          <div style={{padding:"0 0 6px"}}>
-            <div className="kicker" style={{padding:"2px 22px 2px"}}>子板块</div>
-            {board.subs.map((s,i)=> <BoardRow key={s.id} b={s} onOpen={(sb)=>{ setExtra([]); nav.push("board",{board:sb}); }} last={i===board.subs.length-1}/>)}
-            <div style={{height:8}}></div>
-          </div>
-        )}
-
         {/* sticky filter bar: 排序（主） + 分类（轻量次级） */}
         <div style={{position:"sticky", top:0, zIndex:3, background:"var(--bg)"}}>
           <div style={{display:"flex", gap:22, overflowX:"auto", padding:"4px 22px 0", scrollbarWidth:"none"}}>
@@ -208,6 +208,17 @@ const BoardScreen = ({board}) => {
           )}
           <div className="feed-div" style={{margin:0}}></div>
         </div>
+
+        {/* sub-boards (子板块) — compact single row, placed under the tags */}
+        {board.subs && board.subs.length>0 && (
+          <>
+            <div className="kicker" style={{padding:"13px 22px 10px"}}>子板块</div>
+            <div style={{display:"flex", gap:8, padding:"0 22px 14px"}}>
+              {board.subs.map(s=> <SubBoardChip key={s.id} s={s} onOpen={(sb)=>{ setExtra([]); nav.push("board",{board:sb}); }}/>)}
+            </div>
+            <div className="feed-div"></div>
+          </>
+        )}
 
         {/* pinned / notice block */}
         {pinned.map((p)=> <PinnedRow key={p.id} item={p} onOpen={openThread}/>)}
