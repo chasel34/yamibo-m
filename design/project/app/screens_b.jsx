@@ -102,8 +102,49 @@ const ThreadScreen = ({thread, board}) => {
 const ImageViewer = ({images, index}) => {
   const nav = window.useNav();
   const [i, setI] = React.useState(index||0);
-  const [zoom, setZoom] = React.useState(false);
+  const [dx, setDx] = React.useState(0);      // live drag offset in px
+  const [dragging, setDragging] = React.useState(false);
+  const startX = React.useRef(0);
+  const startY = React.useRef(0);
+  const trackW = React.useRef(0);
+  const axisLock = React.useRef(null);        // 'x' | 'y' | null
   const n = images.length;
+
+  const onStart = (e)=>{
+    const t = e.touches ? e.touches[0] : e;
+    startX.current = t.clientX; startY.current = t.clientY;
+    trackW.current = e.currentTarget.offsetWidth;
+    axisLock.current = null;
+    setDragging(true);
+  };
+  const onMove = (e)=>{
+    if(!dragging) return;
+    const t = e.touches ? e.touches[0] : e;
+    const mx = t.clientX - startX.current;
+    const my = t.clientY - startY.current;
+    if(axisLock.current===null && (Math.abs(mx)>6 || Math.abs(my)>6)){
+      axisLock.current = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+    }
+    if(axisLock.current!=="x") return;
+    if(e.cancelable) e.preventDefault();
+    let d = mx;
+    // rubber-band at the ends
+    if((i===0 && d>0) || (i===n-1 && d<0)) d = d*0.32;
+    setDx(d);
+  };
+  const onEnd = ()=>{
+    if(!dragging) return;
+    const w = trackW.current || 1;
+    const threshold = Math.min(90, w*0.22);
+    let ni = i;
+    if(dx <= -threshold && i < n-1) ni = i+1;
+    else if(dx >= threshold && i > 0) ni = i-1;
+    setI(ni);
+    setDx(0);
+    setDragging(false);
+    axisLock.current = null;
+  };
+
   return (
     <div style={{position:"absolute", inset:0, background:"#0d0a09", display:"flex", flexDirection:"column", zIndex:1}}>
       <div className="statusbar" style={{color:"#fff"}}>
@@ -117,19 +158,29 @@ const ImageViewer = ({images, index}) => {
         <span style={{color:"#fff", fontFamily:"var(--font-head)", fontWeight:600, fontSize:15}}>{i+1} / {n}</span>
         <div className="navback" style={{background:"rgba(255,255,255,.14)", color:"#fff"}} onClick={()=>nav.toast("已保存到相册")}><Ic name="download" size={20}/></div>
       </div>
-      <div style={{flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 16px", position:"relative"}} onClick={()=>setZoom(!zoom)}>
-        <div className="stripe" style={{width:"100%", height:zoom?440:340, borderRadius:12, transition:"height .3s", transform:zoom?"scale(1.02)":"none"}}>
-          <span className="stripe-cap">{images[i].cap||"图片占位"}{zoom?" · 已放大":""}</span>
+      <div
+        style={{flex:1, display:"flex", alignItems:"center", overflow:"hidden", position:"relative", touchAction:"pan-y"}}
+        onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}
+        onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
+      >
+        <div style={{
+          display:"flex", width:"100%", height:"100%",
+          transform:`translateX(calc(${-i*100}% + ${dx}px))`,
+          transition: dragging ? "none" : "transform .34s cubic-bezier(.32,.72,.34,1)"
+        }}>
+          {images.map((img,k)=>(
+            <div key={k} style={{flex:"0 0 100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", padding:"0 16px"}}>
+              <div className="stripe" style={{width:"100%", height:"100%", maxHeight:520, borderRadius:12, pointerEvents:"none"}}>
+                <span className="stripe-cap">{img.cap||"图片占位"}</span>
+              </div>
+            </div>
+          ))}
         </div>
-        {n>1 && <>
-          <div className="navback" style={{position:"absolute", left:18, background:"rgba(255,255,255,.14)", color:"#fff"}} onClick={(e)=>{e.stopPropagation(); setI((i-1+n)%n);}}><Ic name="back" size={20}/></div>
-          <div className="navback" style={{position:"absolute", right:18, background:"rgba(255,255,255,.14)", color:"#fff"}} onClick={(e)=>{e.stopPropagation(); setI((i+1)%n);}}><Ic name="chevRight" size={20}/></div>
-        </>}
       </div>
       <div style={{display:"flex", gap:6, justifyContent:"center", padding:"14px 0 8px"}}>
-        {images.map((_,k)=> <div key={k} style={{width:k===i?20:7, height:7, borderRadius:4, background:k===i?"#fff":"rgba(255,255,255,.35)", transition:".25s"}}></div>)}
+        {images.map((_,k)=> <div key={k} onClick={()=>setI(k)} style={{width:k===i?20:7, height:7, borderRadius:4, background:k===i?"#fff":"rgba(255,255,255,.35)", transition:".25s", cursor:"pointer"}}></div>)}
       </div>
-      <div style={{textAlign:"center", color:"rgba(255,255,255,.6)", fontFamily:"var(--font-head)", fontSize:12, padding:"4px 0 22px"}}>点按图片可缩放 · 左右切换</div>
+      <div style={{textAlign:"center", color:"rgba(255,255,255,.6)", fontFamily:"var(--font-head)", fontSize:12, padding:"4px 0 22px"}}>左右滑动切换</div>
     </div>
   );
 };
