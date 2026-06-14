@@ -17,7 +17,7 @@ export function absUrl(u?: string | null): string | null {
   return HOST + '/' + String(u).replace(/^\//, '');
 }
 
-// ---- decode a small set of HTML entities (single pass) ----
+// ---- decode the HTML entities emitted by Discuz (sometimes double-encoded) ----
 const ENTITIES: Record<string, string> = {
   '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"',
   '&#39;': "'", '&apos;': "'", '&rsaquo;': '›', '&lsaquo;': '‹', '&hellip;': '…', '&mdash;': '—',
@@ -25,7 +25,13 @@ const ENTITIES: Record<string, string> = {
 const ENTITY_RE = /&(?:nbsp|amp|lt|gt|quot|#39|apos|rsaquo|lsaquo|hellip|mdash);/g;
 export function decodeEntities(s?: string | null): string {
   if (!s) return '';
-  return s.replace(ENTITY_RE, (m) => ENTITIES[m] ?? m);
+  let decoded = s;
+  for (let i = 0; i < 3; i += 1) {
+    const next = decoded.replace(ENTITY_RE, (m) => ENTITIES[m] ?? m);
+    if (next === decoded) break;
+    decoded = next;
+  }
+  return decoded;
 }
 
 // Discuz smiley codes leak into text when not rendered as images, e.g. {:1_740:}.
@@ -35,6 +41,7 @@ const SMILEY_CODE_RE = /\{:[\w]+_\d+:\}/g;
 export function stripHtml(html?: string | null): string {
   if (!html) return '';
   let s = String(html)
+    .replace(/<(?:span|font)\b[^>]*(?:display\s*:\s*none|class\s*=\s*["']jammer["'])[^>]*>[\s\S]*?<\/(?:span|font)>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
@@ -97,6 +104,8 @@ export interface Attachment {
   isimage?: string;
   description?: string;
   filename?: string;
+  width?: string;
+  height?: string;
 }
 
 // ---- full URL for a postlist[].attachments[aid] entry ----
@@ -122,9 +131,24 @@ export function parseMessage(
   const blocks: Block[] = [];
   const pushText = (chunk: string) => {
     const v = stripHtml(chunk);
-    if (v) blocks.push({ t: 'text', v });
+    if (!v) return;
+    const urlRe = /https?:\/\/[^\s<>"']+/gi;
+    let lastUrl = 0;
+    let urlMatch: RegExpExecArray | null;
+    while ((urlMatch = urlRe.exec(v))) {
+      const before = v.slice(lastUrl, urlMatch.index);
+      if (before) blocks.push({ t: 'text', v: before });
+      let href = urlMatch[0];
+      const trailing = href.match(/[),.;!?，。；！？）]+$/)?.[0] || '';
+      if (trailing) href = href.slice(0, -trailing.length);
+      blocks.push({ t: 'link', v: href, href });
+      if (trailing) blocks.push({ t: 'text', v: trailing });
+      lastUrl = urlMatch.index + urlMatch[0].length;
+    }
+    const rest = v.slice(lastUrl);
+    if (rest) blocks.push({ t: 'text', v: rest });
   };
-  const re = /<blockquote[\s\S]*?<\/blockquote>|<img\b[^>]*>/gi;
+  const re = /<blockquote[\s\S]*?<\/blockquote>|<a\b[^>]*>[\s\S]*?<\/a>|<img\b[^>]*>/gi;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(body))) {
@@ -141,6 +165,11 @@ export function parseMessage(
       }
       const v = stripHtml(bodyHtml);
       blocks.push({ t: 'quote', who, v });
+    } else if (/^<a/i.test(tag)) {
+      const href = decodeEntities((tag.match(/\bhref=["']([^"']+)["']/i) || [])[1] || '');
+      const v = stripHtml(tag) || href;
+      if (href) blocks.push({ t: 'link', v, href: absUrl(href) || href });
+      else pushText(tag);
     } else {
       const src = imgUrlFromTag(tag);
       if (src && !SMILEY_RE.test(src)) blocks.push({ t: 'img', src, cap: '图片' });
@@ -159,7 +188,13 @@ export function parseMessage(
       const url = attachmentUrl(a);
       const path = a.attachment || '';
       const inline = shown.some((s) => s !== '' && (s === url || (path !== '' && s.indexOf(path) >= 0)));
-      if (!inline) blocks.push({ t: 'img', src: url, cap: a.description || '图片' });
+      if (!inline) blocks.push({
+        t: 'img',
+        src: url,
+        cap: a.description || a.filename || '图片',
+        width: parseInt(a.width || '0', 10) || undefined,
+        height: parseInt(a.height || '0', 10) || undefined,
+      });
     });
   }
 

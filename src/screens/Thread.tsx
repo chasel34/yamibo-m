@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, Linking, ActivityIndicator } from 'react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
 import { NavHeader, NavBack, Avatar, Divider, Kicker } from '../components/ui';
@@ -12,20 +12,29 @@ import { recordThread } from '../history';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Block, Floor as FloorType, ThreadData, ThreadImage, ThreadNavParam, RootStackParamList } from '../types';
 
-function FloorBlock({ b, onImg }: { b: Block; onImg?: (src: string | null) => void }) {
+function FloorBlock({ b, onImg, onLink }: { b: Block; onImg?: (src: string | null) => void; onLink?: (href: string) => void }) {
   const { t } = useTheme();
   if (b.t === 'text') return <Text style={{ fontFamily: FONTS.body, fontSize: 16, marginBottom: 12, color: t.ink2, lineHeight: 27.5 }}>{b.v}</Text>;
+  if (b.t === 'link') return (
+    <Text
+      accessibilityRole="link"
+      onPress={() => onLink && onLink(b.href)}
+      style={{ fontFamily: FONTS.body, fontSize: 16, marginBottom: 12, color: t.accentInk, lineHeight: 27.5, textDecorationLine: 'underline' }}
+    >
+      {b.v}
+    </Text>
+  );
   if (b.t === 'quote') return (
     <View style={{ borderLeftWidth: 2, borderLeftColor: t.lineStrong, paddingLeft: 14, paddingVertical: 2, marginVertical: 12 }}>
       {b.who ? <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.muted, marginBottom: 4 }}>{b.who} 写道</Text> : null}
       <Text style={{ fontFamily: FONTS.body, fontSize: 14, color: t.muted }}>{b.v}</Text>
     </View>
   );
-  if (b.t === 'img') return <RemoteImage src={b.src} cap={b.cap} onPress={() => onImg && onImg(b.src)} />;
+  if (b.t === 'img') return <RemoteImage src={b.src} cap={b.cap} width={b.width} height={b.height} onPress={() => onImg && onImg(b.src)} />;
   return null;
 }
 
-function Floor({ f, onImg, onUnavailable }: { f: FloorType; onImg?: (src: string | null) => void; onUnavailable: () => void }) {
+function Floor({ f, onImg, onLink, onUnavailable }: { f: FloorType; onImg?: (src: string | null) => void; onLink?: (href: string) => void; onUnavailable: () => void }) {
   const { t } = useTheme();
   return (
     <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 22 }}>
@@ -41,7 +50,7 @@ function Floor({ f, onImg, onUnavailable }: { f: FloorType; onImg?: (src: string
         <Text style={{ fontFamily: FONTS.head, fontSize: 13, fontWeight: '600', color: t.faint }}>{f.floor === 1 ? '' : '#' + f.floor}</Text>
       </View>
       <View style={{ paddingLeft: 2 }}>
-        {f.blocks.map((b, i) => <FloorBlock key={i} b={b} onImg={onImg} />)}
+        {f.blocks.map((b, i) => <FloorBlock key={i} b={b} onImg={onImg} onLink={onLink} />)}
       </View>
       {!f.op && (
         <View style={{ flexDirection: 'row', gap: 22, paddingTop: 2, paddingBottom: 8 }}>
@@ -66,6 +75,7 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   const [data, setData] = React.useState<ThreadData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const load = React.useCallback(async () => {
     setError(null);
     try {
@@ -79,10 +89,48 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   React.useEffect(() => { load(); }, [load]);
 
+  const loadMore = async () => {
+    if (!data || loadingMore || !data.hasMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await getThread(tid, data.page + 1);
+      setData((prev) => {
+        if (!prev) return next;
+        const floorMap = new Map(prev.floors.map((f) => [f.pid || String(f.floor), f]));
+        next.floors.forEach((f) => floorMap.set(f.pid || String(f.floor), f));
+        const imageMap = new Map(prev.images.map((img) => [img.src || img.cap, img]));
+        next.images.forEach((img) => imageMap.set(img.src || img.cap, img));
+        return {
+          ...prev,
+          floors: Array.from(floorMap.values()).sort((a, b) => a.floor - b.floor),
+          images: Array.from(imageMap.values()),
+          page: next.page,
+          hasMore: next.hasMore,
+        };
+      });
+    } catch (e) {
+      nav.toast(e.message);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const openImg = (src: string | null) => {
     const imgs: ThreadImage[] = data?.images?.length ? data.images : [{ src, cap: '图片' }];
     const idx = Math.max(0, imgs.findIndex((i) => i.src === src));
     nav.openViewer(imgs, idx);
+  };
+  const openLink = async (href: string) => {
+    const threadMatch = href.match(/[?&](?:tid|ptid)=(\d+)/);
+    if (/^https?:\/\/bbs\.yamibo\.com\//i.test(href) && threadMatch) {
+      nav.push('thread', { thread: { tid: threadMatch[1], title: '帖子' } });
+      return;
+    }
+    try {
+      await Linking.openURL(href);
+    } catch (e) {
+      nav.toast('无法打开这个链接');
+    }
   };
 
   const thread = data?.thread || paramThread;
@@ -114,7 +162,7 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
             {/* OP body */}
             {floors[0] ? (
               <View style={{ paddingTop: 22, paddingHorizontal: 22, paddingBottom: 8 }}>
-                {floors[0].blocks.map((b, i) => <FloorBlock key={i} b={b} onImg={openImg} />)}
+                {floors[0].blocks.map((b, i) => <FloorBlock key={i} b={b} onImg={openImg} onLink={openLink} />)}
               </View>
             ) : null}
             {/* replies */}
@@ -122,12 +170,22 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
             <Divider style={{ marginTop: 14 }} />
             {floors.slice(1).map((f, i) => (
               <View key={f.pid || f.floor}>
-                <Floor f={f} onImg={openImg} onUnavailable={nav.notImplemented} />
+                <Floor f={f} onImg={openImg} onLink={openLink} onUnavailable={nav.notImplemented} />
                 {i < floors.length - 2 && <Divider />}
               </View>
             ))}
-            {floors.length <= 1 ? (
+            {floors.length <= 1 && !data.hasMore ? (
               <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 13, color: t.muted, paddingVertical: 28 }}>还没有回复，来抢沙发吧</Text>
+            ) : data.hasMore ? (
+              <Pressable
+                disabled={loadingMore}
+                onPress={loadMore}
+                style={{ alignSelf: 'center', minWidth: 150, height: 42, marginTop: 20, marginBottom: 18, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}
+              >
+                {loadingMore
+                  ? <ActivityIndicator size="small" color={t.accentInk} />
+                  : <Text style={{ fontFamily: FONTS.head, fontSize: 13.5, fontWeight: '600', color: t.accentInk }}>加载更多回复</Text>}
+              </Pressable>
             ) : (
               <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 12, color: t.faint, paddingTop: 22, paddingBottom: 18 }}>—  到底啦  —</Text>
             )}

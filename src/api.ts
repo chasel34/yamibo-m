@@ -10,6 +10,10 @@ import type {
 
 export const PROXY = 'http://localhost:8089';
 const BASE = (Platform.OS === 'web' ? PROXY : HOST) + '/api/mobile/index.php';
+export function displayImageUrl(src?: string | null): string | null {
+  if (!src) return null;
+  return Platform.OS === 'web' ? `${PROXY}/__image?url=${encodeURIComponent(src)}` : src;
+}
 
 // ---- live session info shared with the UI (current user + unread notice) ----
 let me: Me = { uid: '0', username: '', avatar: null };
@@ -155,9 +159,14 @@ export async function getBoard(fid: string, page = 1, typeid: string | number = 
 export async function getThread(tid: string, page: string | number = 1): Promise<ThreadData> {
   const v = (await request('viewthread', { tid, page })).Variables || {};
   const th = v.thread || {};
-  const floors = (v.postlist || []).map((p: any, i: number) => ({
+  const currentPage = parseInt(String(page), 10);
+  const ppp = parseInt(v.ppp || '20', 10);
+  // Page 1 may prepend a duplicate of the latest reply without `number`.
+  // It belongs to a later page and must not interrupt the chronological list.
+  const numberedPosts = (v.postlist || []).filter((p: any) => p.number != null);
+  const floors = numberedPosts.map((p: any, i: number) => ({
     pid: p.pid,
-    floor: parseInt(p.number || p.position || (i + 1), 10),
+    floor: parseInt(p.number || p.position || ((currentPage - 1) * ppp + i + 1), 10),
     op: p.first === '1',
     user: { name: p.author, uid: p.authorid, group: '' },
     time: timeFromUnix(p.dbdateline) || p.dateline,
@@ -174,7 +183,8 @@ export async function getThread(tid: string, page: string | number = 1): Promise
     author: op.user,
     time: op.time,
   };
-  return { thread, floors, images, ppp: parseInt(v.ppp || '20', 10), page: parseInt(String(page), 10) };
+  const totalPages = Math.max(1, Math.ceil((thread.replies + 1) / ppp));
+  return { thread, floors, images, ppp, page: currentPage, hasMore: currentPage < totalPages };
 }
 
 // ===================== Profile =====================

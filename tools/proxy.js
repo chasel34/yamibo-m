@@ -38,6 +38,34 @@ function storeSetCookies(list) {
   });
 }
 
+function pipeImage(imageUrl, res, redirectsLeft = 3) {
+  const targetImage = new URL(imageUrl);
+  const client = targetImage.protocol === 'https:' ? https : http;
+  const headers = {
+    'User-Agent': UA,
+    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    'Referer': targetImage.origin + '/',
+  };
+  if (targetImage.origin === TARGET && jar.size) headers.Cookie = cookieHeader();
+  const imageReq = client.get(targetImage, { headers }, (imageRes) => {
+    const location = imageRes.headers.location;
+    if (location && imageRes.statusCode >= 300 && imageRes.statusCode < 400 && redirectsLeft > 0) {
+      imageRes.resume();
+      pipeImage(new URL(location, targetImage).toString(), res, redirectsLeft - 1);
+      return;
+    }
+    res.writeHead(imageRes.statusCode || 502, {
+      'Content-Type': imageRes.headers['content-type'] || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=3600',
+    });
+    imageRes.pipe(res);
+  });
+  imageReq.on('error', (e) => {
+    res.writeHead(502);
+    res.end(String(e));
+  });
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -45,6 +73,17 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   if (req.url === '/__reset') { jar.clear(); res.writeHead(200); res.end('ok'); return; }
+
+  if (req.url.startsWith('/__image?')) {
+    const imageUrl = new URL(req.url, 'http://localhost').searchParams.get('url');
+    if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
+      res.writeHead(400);
+      res.end('invalid image URL');
+      return;
+    }
+    pipeImage(imageUrl, res);
+    return;
+  }
 
   const target = new URL(req.url, TARGET);
   const chunks = [];

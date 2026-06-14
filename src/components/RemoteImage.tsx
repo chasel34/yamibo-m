@@ -1,26 +1,39 @@
 import React from 'react';
-import { Image, Pressable, StyleProp, ImageStyle } from 'react-native';
+import { Image, Linking, Pressable, StyleProp, ImageStyle, Text, View } from 'react-native';
 import { StripeImg } from './ui';
-import { useTheme } from '../theme';
+import { useTheme, FONTS } from '../theme';
+import { displayImageUrl } from '../api';
 
 interface RemoteImageProps {
   src?: string | null;
   cap?: string;
   onPress?: () => void;
   style?: StyleProp<ImageStyle>;
+  width?: number;
+  height?: number;
 }
 
 // Post-body image: loads the real attachment, keeps aspect ratio, falls back to
 // the striped placeholder if it can't load.
-export default function RemoteImage({ src, cap, onPress, style }: RemoteImageProps) {
+export default function RemoteImage({ src, cap, onPress, style, width, height }: RemoteImageProps) {
   const { t } = useTheme();
-  const [ratio, setRatio] = React.useState(1.5);
+  const [ratio, setRatio] = React.useState(width && height ? width / height : 1.5);
   const [err, setErr] = React.useState(false);
+  React.useEffect(() => {
+    setErr(false);
+    setRatio(width && height ? width / height : 1.5);
+  }, [src, width, height]);
 
   if (!src || err) {
     return (
-      <Pressable onPress={onPress}>
-        <StripeImg h={180} cap={cap || '图片'} radius={10} style={{ marginTop: 6, marginBottom: 14 }} />
+      <Pressable onPress={() => {
+        const original = displayImageUrl(src);
+        if (original) Linking.openURL(original);
+      }}>
+        <StripeImg h={150} cap="图片加载失败" radius={10} style={{ marginTop: 6 }} />
+        <View style={{ paddingVertical: 9, marginBottom: 14 }}>
+          <Text style={{ color: t.accentInk, fontFamily: FONTS.body, fontSize: 13 }}>查看原图：{cap || src || '图片'}</Text>
+        </View>
       </Pressable>
     );
   }
@@ -31,11 +44,11 @@ export default function RemoteImage({ src, cap, onPress, style }: RemoteImagePro
   return (
     <Pressable onPress={onPress}>
       <Image
-        source={{ uri: src }}
+        source={{ uri: displayImageUrl(src) || src }}
         onLoad={onLoad}
         onError={() => setErr(true)}
-        resizeMode="cover"
-        style={[{ width: '100%', aspectRatio: Math.max(0.6, Math.min(ratio, 2)), borderRadius: 10, backgroundColor: t.card2, marginTop: 6, marginBottom: 14 }, style]}
+        resizeMode="contain"
+        style={[{ width: '100%', aspectRatio: ratio, borderRadius: 10, backgroundColor: t.card2, marginTop: 6, marginBottom: 14 }, style]}
       />
     </Pressable>
   );

@@ -86,7 +86,8 @@ export interface BoardData {
 // ---- Thread (viewthread) ----
 export type Block =
   | { t: 'text'; v: string }
-  | { t: 'img'; src: string | null; cap: string }
+  | { t: 'link'; v: string; href: string }
+  | { t: 'img'; src: string | null; cap: string; width?: number; height?: number }
   | { t: 'quote'; who: string; v: string };
 
 export interface Floor {
@@ -116,6 +117,7 @@ export interface ThreadData {
   images: ThreadImage[];
   ppp: number;
   page: number;
+  hasMore: boolean;
 }
 
 // ---- Profile ----

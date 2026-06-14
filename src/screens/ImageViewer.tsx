@@ -7,6 +7,7 @@ import { useNav } from '../useNav';
 import { FONTS } from '../theme';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
+import { displayImageUrl } from '../api';
 
 interface ViewerItem {
   src?: string | null;
@@ -19,7 +20,7 @@ function ViewerImage({ item, zoom }: { item?: ViewerItem; zoom: boolean }) {
   if (item && item.src && !err) {
     return (
       <Image
-        source={{ uri: item.src }}
+        source={{ uri: displayImageUrl(item.src) || item.src }}
         onError={() => setErr(true)}
         resizeMode="contain"
         style={{ width: '100%', height: zoom ? 560 : 460, transform: [{ scale: zoom ? 1.15 : 1 }] }}
