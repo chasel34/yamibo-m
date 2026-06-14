@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, Image, ViewStyle } from 'react-native';
+import { Animated, Image, PanResponder, Pressable, Text, View, ViewStyle } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import Icon from '../components/Icon';
 import { StripeImg } from '../components/ui';
@@ -14,7 +14,7 @@ interface ViewerItem {
   cap?: string;
 }
 
-function ViewerImage({ item, zoom }: { item?: ViewerItem; zoom: boolean }) {
+function ViewerImage({ item }: { item?: ViewerItem }) {
   const [err, setErr] = React.useState(false);
   React.useEffect(() => { setErr(false); }, [item && item.src]);
   if (item && item.src && !err) {
@@ -23,24 +23,73 @@ function ViewerImage({ item, zoom }: { item?: ViewerItem; zoom: boolean }) {
         source={{ uri: displayImageUrl(item.src) || item.src }}
         onError={() => setErr(true)}
         resizeMode="contain"
-        style={{ width: '100%', height: zoom ? 560 : 460, transform: [{ scale: zoom ? 1.15 : 1 }] }}
+        style={{ width: '100%', height: '100%', maxHeight: 520 }}
       />
     );
   }
   return (
-    <View style={{ width: '100%' }}>
-      <StripeImg h={zoom ? 440 : 340} radius={12} cap={(item && item.cap ? item.cap : '图片占位') + (zoom ? ' · 已放大' : '')} />
+    <View style={{ width: '100%', height: '100%', maxHeight: 520, justifyContent: 'center' }}>
+      <StripeImg h={520} radius={12} cap={item && item.cap ? item.cap : '图片占位'} style={{ width: '100%', maxHeight: '100%' }} />
     </View>
   );
 }
 
 export default function ImageViewerScreen({ route }: NativeStackScreenProps<RootStackParamList, 'viewer'>) {
   const nav = useNav();
-  const images: ViewerItem[] = route.params?.images || [{ cap: '图片占位' }];
-  const [i, setI] = React.useState<number>(route.params?.index || 0);
-  const [zoom, setZoom] = React.useState(false);
+  const images: ViewerItem[] = route.params?.images?.length ? route.params.images : [{ cap: '图片占位' }];
   const n = images.length;
+  const initialIndex = Math.min(Math.max(route.params?.index || 0, 0), n - 1);
+  const [i, setI] = React.useState(initialIndex);
+  const [pageWidth, setPageWidth] = React.useState(0);
+  const dragX = React.useRef(new Animated.Value(0)).current;
   const circBtn: ViewStyle = { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' };
+
+  const goTo = React.useCallback((nextIndex: number) => {
+    if (!pageWidth || nextIndex === i) return;
+    const clamped = Math.min(Math.max(nextIndex, 0), n - 1);
+    Animated.timing(dragX, {
+      toValue: (i - clamped) * pageWidth,
+      duration: 340,
+      useNativeDriver: true,
+    }).start(() => {
+      setI(clamped);
+      dragX.setValue(0);
+    });
+  }, [dragX, i, n, pageWidth]);
+
+  const panResponder = React.useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => (
+      n > 1
+      && Math.abs(gesture.dx) > 6
+      && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+    ),
+    onPanResponderMove: (_, gesture) => {
+      let dx = gesture.dx;
+      if ((i === 0 && dx > 0) || (i === n - 1 && dx < 0)) dx *= 0.32;
+      dragX.setValue(dx);
+    },
+    onPanResponderRelease: (_, gesture) => {
+      const threshold = Math.min(90, pageWidth * 0.22);
+      if (gesture.dx <= -threshold && i < n - 1) goTo(i + 1);
+      else if (gesture.dx >= threshold && i > 0) goTo(i - 1);
+      else {
+        Animated.spring(dragX, {
+          toValue: 0,
+          speed: 24,
+          bounciness: 0,
+          useNativeDriver: true,
+        }).start();
+      }
+    },
+    onPanResponderTerminate: () => {
+      Animated.spring(dragX, {
+        toValue: 0,
+        speed: 24,
+        bounciness: 0,
+        useNativeDriver: true,
+      }).start();
+    },
+  }), [dragX, goTo, i, n, pageWidth]);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0d0a09' }}>
@@ -59,21 +108,40 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
         <Text style={{ color: '#fff', fontFamily: FONTS.head, fontWeight: '600', fontSize: 15 }}>{i + 1} / {n}</Text>
         <Pressable style={circBtn} onPress={nav.notImplemented}><Icon name="download" size={20} color="#fff" /></Pressable>
       </View>
-      <Pressable onPress={() => setZoom(!zoom)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 }}>
-        <ViewerImage item={images[i]} zoom={zoom} />
-        {n > 1 && (
-          <>
-            <Pressable style={[circBtn, { position: 'absolute', left: 18 }]} onPress={() => setI((i - 1 + n) % n)}><Icon name="back" size={20} color="#fff" /></Pressable>
-            <Pressable style={[circBtn, { position: 'absolute', right: 18 }]} onPress={() => setI((i + 1) % n)}><Icon name="chevRight" size={20} color="#fff" /></Pressable>
-          </>
+      <View
+        style={{ flex: 1, overflow: 'hidden' }}
+        onLayout={(event) => setPageWidth(event.nativeEvent.layout.width)}
+        {...panResponder.panHandlers}
+      >
+        {pageWidth > 0 && (
+          <Animated.View
+            style={{
+              height: '100%',
+              flexDirection: 'row',
+              width: pageWidth * n,
+              transform: [{ translateX: Animated.add(dragX, -i * pageWidth) }],
+            }}
+          >
+            {images.map((item, k) => (
+              <View key={k} style={{ width: pageWidth, height: '100%', paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' }}>
+                <ViewerImage item={item} />
+              </View>
+            ))}
+          </Animated.View>
         )}
-      </Pressable>
+      </View>
       <View style={{ flexDirection: 'row', gap: 6, justifyContent: 'center', paddingTop: 14, paddingBottom: 8 }}>
         {images.map((_, k) => (
-          <View key={k} style={{ width: k === i ? 20 : 7, height: 7, borderRadius: 4, backgroundColor: k === i ? '#fff' : 'rgba(255,255,255,0.35)' }} />
+          <Pressable
+            key={k}
+            accessibilityRole="button"
+            accessibilityLabel={`查看第 ${k + 1} 张图片`}
+            onPress={() => goTo(k)}
+            style={{ width: k === i ? 20 : 7, height: 7, borderRadius: 4, backgroundColor: k === i ? '#fff' : 'rgba(255,255,255,0.35)' }}
+          />
         ))}
       </View>
-      <Text style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.head, fontSize: 12, paddingTop: 4, paddingBottom: 22 }}>点按图片可缩放 · 左右切换</Text>
+      <Text style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)', fontFamily: FONTS.head, fontSize: 12, paddingTop: 4, paddingBottom: 22 }}>左右滑动切换</Text>
     </View>
   );
 }
