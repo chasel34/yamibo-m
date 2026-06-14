@@ -4,6 +4,8 @@ import { useToast, useAuth } from './context';
 import { useTheme } from './theme';
 import type { ThreadImage } from './types';
 
+export const NOT_IMPLEMENTED_MESSAGE = '暂无实现此功能';
+
 // Bridges the design's `nav` API (push/pop/switchTab/openViewer/toast/login/logout/theme)
 // onto React Navigation, so the ported screens read 1:1 against app/*.jsx.
 export function useNav() {
@@ -22,6 +24,7 @@ export function useNav() {
     openViewer: (images: ThreadImage[], index?: number) => navigation.navigate('viewer', { images, index: index || 0 }),
     closeViewer: () => navigation.goBack(),
     toast,
+    notImplemented: () => toast(NOT_IMPLEMENTED_MESSAGE),
     enter,         // mark session active (guest or after real login)
     login: enter,  // alias kept for guest-browse button
     logout,

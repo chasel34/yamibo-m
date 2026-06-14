@@ -51,7 +51,7 @@ export default function ForumScreen() {
                 晚上好{data?.me?.name ? '，' + data.me.name : ''}
               </Text>
             </View>
-            <IconBtn name="search" size={20} onPress={() => nav.toast('搜索：敬请期待')} />
+            <IconBtn name="search" size={20} onPress={nav.notImplemented} />
           </View>
         </View>
 

@@ -58,7 +58,7 @@ export default function ProfileScreen({ route }: NativeStackScreenProps<RootStac
         <View style={{ flex: 1 }} />
         {self
           ? <NavBack onBack={() => nav.push('settings', {})}><Icon name="gear" size={19} color={t.inkSoft} /></NavBack>
-          : <NavBack onBack={() => nav.toast('更多')}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>}
+          : <NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>}
       </View>
 
       {error ? <ErrorView message={error} onRetry={load} />
@@ -89,21 +89,21 @@ export default function ProfileScreen({ route }: NativeStackScreenProps<RootStac
               <>
                 <MRow icon="bookmark" label="我的收藏" onPress={() => nav.push('collections', {})} />
                 <HLine style={{ marginLeft: 56, marginRight: 22 }} />
-                <MRow icon="doc" label="我的发帖" onPress={() => nav.toast('我的发帖：v2 开放')} />
+                <MRow icon="doc" label="我的发帖" onPress={nav.notImplemented} />
                 <HLine style={{ marginLeft: 56, marginRight: 22 }} />
                 <MRow icon="logout" label="退出登录" danger onPress={() => nav.logout()} />
               </>
             ) : (
               <>
                 <View style={{ flexDirection: 'row', gap: 12, paddingTop: 22, paddingHorizontal: 22 }}>
-                  <View style={{ flex: 1, height: 52, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
+                  <Pressable onPress={nav.notImplemented} style={{ flex: 1, height: 52, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
                     <Text style={{ color: t.onAccent, fontFamily: FONTS.head, fontSize: 16.5, fontWeight: '600' }}>关注</Text>
-                  </View>
-                  <View style={{ flex: 1, height: 52, borderRadius: 999, backgroundColor: t.card2, alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
+                  </Pressable>
+                  <Pressable onPress={nav.notImplemented} style={{ flex: 1, height: 52, borderRadius: 999, backgroundColor: t.card2, alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
                     <Text style={{ color: t.inkSoft, fontFamily: FONTS.head, fontSize: 16.5, fontWeight: '600' }}>私信</Text>
-                  </View>
+                  </Pressable>
                 </View>
-                <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 12, color: t.faint, paddingTop: 14 }}>v1 暂未开放关注 / 私信</Text>
+                <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 12, color: t.faint, paddingTop: 14 }}>暂无实现此功能</Text>
               </>
             )}
             <View style={{ height: 30 }} />

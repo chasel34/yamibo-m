@@ -25,9 +25,9 @@ export default function AboutScreen() {
         </View>
         <View style={{ height: 34 }} />
         {divFull}
-        <MRow icon="doc" label="社区规范" onPress={() => nav.toast('将跳转网页')} />
+        <MRow icon="doc" label="社区规范" onPress={nav.notImplemented} />
         {divIndent}
-        <MRow icon="info" label="版权声明" onPress={() => nav.toast('将跳转网页')} />
+        <MRow icon="info" label="版权声明" onPress={nav.notImplemented} />
         {divIndent}
         <MRow icon="heart" label="鸣谢汉化组与同好" onPress={() => nav.toast('感谢每一位创作者')} />
         {divFull}

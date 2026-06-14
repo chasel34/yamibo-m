@@ -19,7 +19,6 @@ function loginError(message?: string) {
 export default function LoginScreen() {
   const nav = useNav();
   const { t } = useTheme();
-  const [remember, setRemember] = React.useState(true);
   const [u, setU] = React.useState('');
   const [pw, setPw] = React.useState('');
   const [pwFocus, setPwFocus] = React.useState(false);
@@ -69,11 +68,11 @@ export default function LoginScreen() {
           />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 26, marginHorizontal: 2 }}>
-          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={() => setRemember(!remember)}>
-            <Toggle on={remember} onChange={setRemember} />
+          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={nav.notImplemented}>
+            <View pointerEvents="none"><Toggle on /></View>
             <Text style={{ fontFamily: FONTS.head, fontSize: 14, color: t.inkSoft, fontWeight: '500' }}>记住我</Text>
           </Pressable>
-          <Pressable onPress={() => nav.toast('找回密码将跳转网页')}>
+          <Pressable onPress={nav.notImplemented}>
             <Text style={{ fontFamily: FONTS.head, fontSize: 14, color: t.inkSoft, fontWeight: '600' }}>找回密码</Text>
           </Pressable>
         </View>

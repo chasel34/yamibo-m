@@ -66,7 +66,7 @@ export default function MineScreen() {
         {divFull}
         <MRow icon="bookmark" label="我的收藏" sub={me.stats.collections + ' 篇'} onPress={() => nav.push('collections', {})} />
         {divIndent}
-        <MRow icon="doc" label="我的发帖" sub={me.stats.themes + ' 篇'} onPress={() => nav.toast('我的发帖：v2 开放')} />
+        <MRow icon="doc" label="我的发帖" sub={me.stats.themes + ' 篇'} onPress={nav.notImplemented} />
         {divIndent}
         <MRow icon="history" label="浏览历史" onPress={() => nav.push('history', {})} />
         {divFull}

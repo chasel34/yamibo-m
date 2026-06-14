@@ -52,7 +52,7 @@ export default function MessagesScreen() {
       <View style={{ paddingTop: 6, paddingHorizontal: 22, paddingBottom: 14 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
           <Text style={{ fontFamily: FONTS.head, fontSize: 25, fontWeight: '700', color: t.ink, flex: 1 }}>消息</Text>
-          <IconBtn name="check" size={20} onPress={() => nav.toast('标记已读：v2 开放')} />
+          <IconBtn name="check" size={20} onPress={nav.notImplemented} />
         </View>
         <View style={{ flexDirection: 'row', gap: 24 }}>
           {([['remind', '提醒'], ['dm', '私信']] as const).map(([k, l]) => (
@@ -74,7 +74,7 @@ export default function MessagesScreen() {
             {seg === 'remind' ? (
               reminders!.length === 0 ? <EmptyState label="还没有提醒" sub="有人找你时会出现在这里" /> : reminders!.map((r, i) => (
                 <View key={r.id}>
-                  <Pressable onPress={() => nav.toast('提醒详情：v2 开放')} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
+                  <Pressable onPress={nav.notImplemented} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
                     <View style={{ marginTop: 1 }}><Icon name={r.icon} size={20} color={t.inkSoft} /></View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 }}>
@@ -91,7 +91,7 @@ export default function MessagesScreen() {
             ) : (
               dms!.length === 0 ? <EmptyState label="还没有私信" sub="安安静静，等一朵花开" /> : dms!.map((d, i) => (
                 <View key={d.id}>
-                  <Pressable onPress={() => nav.toast('会话：v2 开放')} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
+                  <Pressable onPress={nav.notImplemented} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
                     <Avatar user={d.user} size={46} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>

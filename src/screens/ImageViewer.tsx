@@ -56,7 +56,7 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
       <View style={{ flexDirection: 'row', paddingHorizontal: 18, paddingBottom: 8, justifyContent: 'space-between', alignItems: 'center' }}>
         <Pressable style={circBtn} onPress={nav.closeViewer}><Icon name="close" size={20} color="#fff" /></Pressable>
         <Text style={{ color: '#fff', fontFamily: FONTS.head, fontWeight: '600', fontSize: 15 }}>{i + 1} / {n}</Text>
-        <Pressable style={circBtn} onPress={() => nav.toast('已保存到相册')}><Icon name="download" size={20} color="#fff" /></Pressable>
+        <Pressable style={circBtn} onPress={nav.notImplemented}><Icon name="download" size={20} color="#fff" /></Pressable>
       </View>
       <Pressable onPress={() => setZoom(!zoom)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 }}>
         <ViewerImage item={images[i]} zoom={zoom} />

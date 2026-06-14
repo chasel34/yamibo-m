@@ -25,7 +25,7 @@ function FloorBlock({ b, onImg }: { b: Block; onImg?: (src: string | null) => vo
   return null;
 }
 
-function Floor({ f, onImg }: { f: FloorType; onImg?: (src: string | null) => void }) {
+function Floor({ f, onImg, onUnavailable }: { f: FloorType; onImg?: (src: string | null) => void; onUnavailable: () => void }) {
   const { t } = useTheme();
   return (
     <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 22 }}>
@@ -45,10 +45,10 @@ function Floor({ f, onImg }: { f: FloorType; onImg?: (src: string | null) => voi
       </View>
       {!f.op && (
         <View style={{ flexDirection: 'row', gap: 22, paddingTop: 2, paddingBottom: 8 }}>
-          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Pressable onPress={onUnavailable} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Icon name="heart" size={16} color={t.muted} /><Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted, fontWeight: '500' }}>赞</Text>
           </Pressable>
-          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Pressable onPress={onUnavailable} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Icon name="reply" size={16} color={t.muted} /><Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted, fontWeight: '500' }}>回复</Text>
           </Pressable>
         </View>
@@ -66,8 +66,6 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   const [data, setData] = React.useState<ThreadData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [fav, setFav] = React.useState(false);
-
   const load = React.useCallback(async () => {
     setError(null);
     try {
@@ -93,7 +91,7 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
   return (
     <Screen>
       <NavHeader title="" onBack={nav.pop}
-        right={<NavBack onBack={() => nav.toast('分享：敬请期待')}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>} />
+        right={<NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>} />
 
       {error ? <ErrorView message={error} onRetry={load} />
         : !data ? <Loader label="加载帖子…" />
@@ -124,7 +122,7 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
             <Divider style={{ marginTop: 14 }} />
             {floors.slice(1).map((f, i) => (
               <View key={f.pid || f.floor}>
-                <Floor f={f} onImg={openImg} />
+                <Floor f={f} onImg={openImg} onUnavailable={nav.notImplemented} />
                 {i < floors.length - 2 && <Divider />}
               </View>
             ))}
@@ -138,14 +136,14 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
       {/* fixed action bar — v1 read only */}
       <View style={{ paddingHorizontal: 18, paddingTop: 8, paddingBottom: 14, borderTopWidth: 1, borderTopColor: t.line, flexDirection: 'row', gap: 14, alignItems: 'center', backgroundColor: t.bg }}>
-        <Pressable onPress={() => nav.toast('写操作敬请期待 · v2 开放')}
+        <Pressable onPress={nav.notImplemented}
           style={{ flex: 1, height: 46, borderRadius: 999, backgroundColor: t.field, justifyContent: 'center', paddingHorizontal: 20 }}>
-          <Text style={{ color: t.faint, fontFamily: FONTS.head, fontSize: 14.5 }}>回复功能敬请期待…</Text>
+          <Text style={{ color: t.faint, fontFamily: FONTS.head, fontSize: 14.5 }}>暂无实现此功能</Text>
         </Pressable>
-        <Pressable onPress={() => { setFav(!fav); nav.toast(fav ? '已取消收藏（v2 同步）' : '已收藏（v2 同步）'); }}>
-          <Icon name="heart" size={24} color={fav ? t.accent : t.inkSoft} fill={fav ? t.accent : 'none'} />
+        <Pressable onPress={nav.notImplemented}>
+          <Icon name="heart" size={24} color={t.inkSoft} fill="none" />
         </Pressable>
-        <Pressable onPress={() => nav.toast('分享：敬请期待')}>
+        <Pressable onPress={nav.notImplemented}>
           <Icon name="share" size={22} color={t.inkSoft} />
         </Pressable>
       </View>

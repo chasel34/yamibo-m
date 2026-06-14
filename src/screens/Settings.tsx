@@ -17,17 +17,17 @@ function ListRow({ children, onPress }: { children?: React.ReactNode; onPress?: 
 }
 const InnerHr = () => <HLine style={{ marginLeft: 57, marginRight: 18 }} />;
 
-function FontSizePicker() {
+function FontSizePicker({ onUnavailable }: { onUnavailable: () => void }) {
   const { t } = useTheme();
-  const [s, setS] = React.useState(1);
+  const selected = 1;
   return (
     <View style={{ flexDirection: 'row', gap: 6 }}>
       {['小', '中', '大'].map((l, i) => (
-        <Pressable key={i} onPress={() => setS(i)} style={{
+        <Pressable key={i} onPress={onUnavailable} style={{
           width: 34, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 8,
-          backgroundColor: s === i ? t.accent : t.card2,
+          backgroundColor: selected === i ? t.accent : t.card2,
         }}>
-          <Text style={{ fontFamily: FONTS.head, fontSize: 13, fontWeight: '600', color: s === i ? t.onAccent : t.inkSoft }}>{l}</Text>
+          <Text style={{ fontFamily: FONTS.head, fontSize: 13, fontWeight: '600', color: selected === i ? t.onAccent : t.inkSoft }}>{l}</Text>
         </Pressable>
       ))}
     </View>
@@ -37,8 +37,6 @@ function FontSizePicker() {
 export default function SettingsScreen() {
   const nav = useNav();
   const { t, theme } = useTheme();
-  const [fetchFull, setFetchFull] = React.useState(false);
-
   const lrIc = (name: string) => <View style={{ width: 26, alignItems: 'center' }}><Icon name={name} size={20} color={t.inkSoft} /></View>;
   const lrTitle = (txt: string, color?: string) => <Text style={{ fontFamily: FONTS.head, fontSize: 15.5, fontWeight: '500', color: color || t.ink, flex: 1 }}>{txt}</Text>;
 
@@ -55,7 +53,7 @@ export default function SettingsScreen() {
           <InnerHr />
           <ListRow>
             {lrIc('type')}{lrTitle('字号')}
-            <FontSizePicker />
+            <FontSizePicker onUnavailable={nav.notImplemented} />
           </ListRow>
         </Card>
 
@@ -67,10 +65,10 @@ export default function SettingsScreen() {
               <Text style={{ fontFamily: FONTS.head, fontSize: 15.5, fontWeight: '500', color: t.ink }}>总是抓取全文</Text>
               <Text style={{ fontFamily: FONTS.body, fontSize: 12, color: t.muted, marginTop: 2 }}>仅有摘要的来源将抓取网页全文</Text>
             </View>
-            <Toggle on={fetchFull} onChange={setFetchFull} />
+            <Toggle on={false} onChange={nav.notImplemented} />
           </ListRow>
           <InnerHr />
-          <ListRow onPress={() => nav.toast('缓存已清除')}>
+          <ListRow onPress={nav.notImplemented}>
             {lrIc('trash')}{lrTitle('清除缓存')}
             <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted }}>42.6 MB</Text>
           </ListRow>
