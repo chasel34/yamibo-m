@@ -38,10 +38,47 @@ const Floor = ({f, onImg, idx}) => (
 );
 
 // ===================== Thread detail =====================
+// reading-mode entry card (shown on novel-type threads)
+const ReaderEntry = ({thread}) => {
+  const nav = window.useNav();
+  const book = window.BOOKS.get(thread.novelId);
+  if(!book) return null;
+  const prog = window.ReaderProgress ? window.ReaderProgress.get(book.id) : null;
+  const open = (fresh)=> nav.push("reader", {bookId:book.id, fresh});
+  const countText = window.BOOKS.chapterCountText(book);
+  return (
+    <div style={{margin:"20px 0 4px", padding:"16px 17px 15px", borderRadius:16,
+      background:"var(--accent-soft)", border:"1px solid var(--line)"}}>
+      <div className="row" style={{gap:12, alignItems:"flex-start"}}>
+        <div style={{width:40, height:40, borderRadius:11, background:"var(--accent)", color:"#fff",
+          display:"flex", alignItems:"center", justifyContent:"center", flex:"0 0 auto"}}>
+          <Ic name="book" size={21}/>
+        </div>
+        <div style={{flex:1, minWidth:0}}>
+          <div style={{fontFamily:"var(--font-head)", fontSize:15, fontWeight:700, color:"var(--ink)"}}>用阅读模式打开</div>
+          <div className="timestamp" style={{fontSize:12.5, marginTop:3}}>
+            {book.shape}{countText!==book.shape ? " · "+countText : ""} · {book.statusText}
+          </div>
+        </div>
+      </div>
+      <div className="row" style={{gap:10, marginTop:14}}>
+        <button onClick={()=>open(!prog)} style={{flex:1, height:46, border:"none", borderRadius:999,
+          background:"var(--accent)", color:"#fff", fontFamily:"var(--font-head)", fontSize:15, fontWeight:600, cursor:"pointer"}}>
+          {prog ? "续读 · "+prog.chapterTitle.split(" · ")[0]+" "+prog.pct+"%" : "开始阅读"}
+        </button>
+        {prog && <button onClick={()=>open(true)} style={{flex:"0 0 auto", height:46, padding:"0 18px", borderRadius:999,
+          background:"transparent", border:"1px solid var(--line-strong)", color:"var(--ink-soft)",
+          fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:600, cursor:"pointer"}}>从头</button>}
+      </div>
+    </div>
+  );
+};
+
 const ThreadScreen = ({thread, board}) => {
   const nav = window.useNav();
   const D = window.DATA;
   const [fav, setFav] = React.useState(false);
+  const isNovel = !!(thread.novelId && window.BOOKS && window.BOOKS.get(thread.novelId));
   const floors = D.floors;
   const allImgs = floors.flatMap(f=> f.blocks.filter(b=>b.t==="img").map(b=>({cap:b.cap})));
   const openImg = (cap)=>{ const idx = Math.max(0, allImgs.findIndex(i=>i.cap===cap)); nav.openViewer(allImgs.length?allImgs:[{cap}], idx); };
@@ -49,7 +86,9 @@ const ThreadScreen = ({thread, board}) => {
     <>
       <SB/>
       <NH title="" onBack={nav.pop}
-        right={<div className="navback" onClick={()=>nav.toast("分享：敬请期待")}><Ic name="share" size={18}/></div>}/>
+        right={isNovel
+          ? <div className="navback" style={{background:"var(--accent)", color:"#fff"}} onClick={()=>nav.push("reader",{bookId:thread.novelId})}><Ic name="book" size={18}/></div>
+          : <div className="navback" onClick={()=>nav.toast("分享：敬请期待")}><Ic name="share" size={18}/></div>}/>
       <div className="scroll" style={{paddingBottom:8}}>
         {/* title block */}
         <div style={{padding:"2px 22px 18px"}}>
@@ -266,4 +305,4 @@ const ActionRow = ({icon, label, onClick, danger}) => (
   </div>
 );
 
-Object.assign(window, { ThreadScreen, ImageViewer, ProfileScreen, InfoRow, ActionRow });
+Object.assign(window, { ThreadScreen, ImageViewer, ProfileScreen, InfoRow, ActionRow, ReaderEntry });

@@ -32,6 +32,7 @@ const SCREENS = {
   collections:(p)=> <window.CollectionsScreen {...p}/>,
   history: (p)=> <window.HistoryScreen {...p}/>,
   about:   (p)=> <window.AboutScreen {...p}/>,
+  reader:  (p)=> <window.Reader {...p}/>,
 };
 const TAB_SCREENS = { forum:1, messages:1, mine:1 };
 

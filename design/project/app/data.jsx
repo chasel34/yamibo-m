@@ -152,15 +152,15 @@ window.DATA = (function(){
 
   // ---- authored threads for 文學區 ----
   const litThreads = [
-    {id:"l1", board:"lit", cat:"原创", tag:"原创", title:"《盛夏与她的制服裙》第三章 已更（长篇连载）", author:users.b, time:"38分钟前", views:"2.1k", replies:86, essence:true, image:true, imgCap:"封面 · 自绘扈页",
+    {id:"l1", board:"lit", cat:"原创", tag:"原创", novelId:"book_sheng", novelKind:"长篇连载", title:"《盛夏与她的制服裙》第三章 已更（长篇连载）", author:users.b, time:"38分钟前", views:"2.1k", replies:86, essence:true, image:true, imgCap:"封面 · 自绘扈页",
       excerpt:"承接上一章的天台告白，这一章把镜头交给了学姐。她的犹豫不是不爱，而是太清楚要付出什么。"},
     {id:"l2", board:"lit", cat:"长评", tag:"长评", title:"长评 | 论百合文学里「沉默」作为一种告白", author:users.c, time:"2小时前", views:"4.3k", replies:152, essence:true,
       excerpt:"很多最动人的瞬间都发生在没有台词的地方。本文从三部作品出发，聊聊留白如何承载情感。"},
     {id:"l3", board:"lit", cat:"同人文", tag:"同人文", title:"【同人】终将成为你 · 毕业后十年的某个雨天", author:users.d, time:"3小时前", views:"1.6k", replies:73,
       excerpt:"侑和燈子早已是旁人眼中的老夫老妻，可有些话过了十年依然只敢在雨声里说。"},
-    {id:"l4", board:"lit", cat:"短篇", tag:"短篇", title:"短篇 | 便利店关东煮与她的第十七个冬天", author:users.f, time:"5小时前", views:"980", replies:34,
+    {id:"l4", board:"lit", cat:"短篇", tag:"短篇", novelId:"book_kanto", novelKind:"短篇", title:"短篇 | 便利店关东煮与她的第十七个冬天", author:users.f, time:"5小时前", views:"980", replies:34,
       excerpt:"三千字的小品。关于一份总是多买一份的关东煮，和一句始终没说出口的话。"},
-    {id:"l5", board:"lit", cat:"翻译", tag:"翻译", title:"【译文】日文原创短篇《向日葵不会说谎》全 5 话完", author:users.a, time:"昨天", views:"3.7k", replies:118, image:true, imgCap:"译文扈页 · 向日葵",
+    {id:"l5", board:"lit", cat:"翻译", tag:"翻译", novelId:"book_sun", novelKind:"中篇连载", title:"【译文】日文原创短篇《向日葵不会说谎》全 5 话完", author:users.a, time:"昨天", views:"3.7k", replies:118, image:true, imgCap:"译文扈页 · 向日葵",
       excerpt:"经原作者授权翻译。一个关于盛夏、向日葵田与两个女孩的故事。已全部完结，欢迎品读。"},
     {id:"l6", board:"lit", cat:"原创", tag:"原创", title:"开新坑《她比月色更轻》设定与人物先行公开", author:users.e, time:"昨天", views:"1.2k", replies:51,
       excerpt:"动笔前先放出世界观和两位主角的设定，想听听大家的想法再决定连载节奏。"},
