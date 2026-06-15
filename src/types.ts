@@ -100,6 +100,7 @@ export interface Floor {
 }
 export interface ThreadInfo {
   tid: string;
+  fid?: string;
   title: string;
   replies: number;
   views?: string;
@@ -118,6 +119,56 @@ export interface ThreadData {
   ppp: number;
   page: number;
   hasMore: boolean;
+}
+
+// ---- Reading mode ----
+export interface ReadingPost {
+  pid: string;
+  number: number;
+  pos: number; // 1-based floor position in the *unfiltered* thread (Discuz `position`)
+  blocks: Block[];
+}
+export interface ReadingStreamPage {
+  tid: string;
+  fid?: string;
+  title: string;
+  author: NavAuthor;
+  posts: ReadingPost[];
+  page: number;
+  ppp: number;
+  totalPages: number;
+}
+export interface ReadingChapter {
+  id: string;
+  pid: string;
+  no: number;
+  title: string;
+  pos?: number; // unfiltered floor position of the chapter's楼主楼层（用于定位章末评论页）
+  blocks?: Block[];
+}
+export interface ReadingBook {
+  tid: string;
+  fid?: string;
+  title: string;
+  author: NavAuthor;
+  shape: '短篇' | '中篇连载' | '长篇连载';
+  statusText: '完结' | '连载中';
+  chapters: ReadingChapter[];
+  ppp: number;
+  totalPages: number;
+}
+export interface ReadingComment {
+  id: string;
+  user: NavAuthor;
+  time: string;
+  text: string;
+}
+export interface ReadingProgress {
+  chapter: number;
+  page: number;
+  pct: number;
+  chapterTitle: string;
+  ts: number;
 }
 
 // ---- Profile ----
@@ -223,7 +274,8 @@ export type RootStackParamList = {
   login: undefined;
   tabs: undefined;
   board: { board?: BoardNavParam; fid?: string } | undefined;
-  thread: { thread?: ThreadNavParam; board?: BoardNavParam } | undefined;
+  thread: { thread?: ThreadNavParam; board?: BoardNavParam; tid?: string } | undefined;
+  reader: { tid: string; authorid: string; fresh?: boolean };
   profile: { uid?: string; self?: boolean } | undefined;
   settings: undefined;
   collections: undefined;

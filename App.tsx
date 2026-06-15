@@ -18,6 +18,7 @@ import LoginScreen from './src/screens/Login';
 import ForumScreen from './src/screens/Forum';
 import BoardScreen from './src/screens/Board';
 import ThreadScreen from './src/screens/Thread';
+import ReaderScreen from './src/screens/Reader';
 import ImageViewerScreen from './src/screens/ImageViewer';
 import ProfileScreen from './src/screens/Profile';
 import MessagesScreen from './src/screens/Messages';
@@ -49,7 +50,18 @@ function RootNavigator() {
     colors: { ...base.colors, background: t.bg, card: t.bg, text: t.ink, primary: t.accent },
   };
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer
+      theme={navTheme}
+      linking={Platform.OS === 'web' ? {
+        prefixes: ['http://localhost:8085'],
+        config: {
+          screens: {
+            thread: 'thread/:tid',
+            reader: 'reader/:tid/:authorid',
+          },
+        },
+      } : undefined}
+    >
       <RootStack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
         {!booted ? (
           <RootStack.Screen name="login" component={LoginScreen} options={{ animation: 'fade' }} />
@@ -58,6 +70,7 @@ function RootNavigator() {
             <RootStack.Screen name="tabs" component={MainTabs} />
             <RootStack.Screen name="board" component={BoardScreen} />
             <RootStack.Screen name="thread" component={ThreadScreen} />
+            <RootStack.Screen name="reader" component={ReaderScreen} options={{ animation: 'fade' }} />
             <RootStack.Screen name="profile" component={ProfileScreen} />
             <RootStack.Screen name="settings" component={SettingsScreen} />
             <RootStack.Screen name="collections" component={CollectionsScreen} />

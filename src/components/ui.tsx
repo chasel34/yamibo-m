@@ -12,12 +12,24 @@ interface AvatarUser {
 }
 
 // ===================== Status bar (faux, ported from .statusbar) =====================
-export function StatusBar({ time = '9:08', color }: { time?: string; color?: string }) {
+function nowHM(): string {
+  const d = new Date();
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+export function StatusBar({ time, color }: { time?: string; color?: string }) {
   const { t } = useTheme();
   const c = color || t.statusbar;
+  // Real wall-clock time, ticking each minute (was hardcoded to 9:08).
+  const [clock, setClock] = React.useState(nowHM);
+  React.useEffect(() => {
+    if (time != null) return;
+    const id = setInterval(() => setClock(nowHM()), 30000);
+    return () => clearInterval(id);
+  }, [time]);
+  const shown = time != null ? time : clock;
   return (
     <View style={{ height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 30, paddingRight: 26 }}>
-      <Text style={{ fontSize: 15, fontWeight: '600', color: c, fontFamily: FONTS.head, fontVariant: ['tabular-nums'] }}>{time}</Text>
+      <Text style={{ fontSize: 15, fontWeight: '600', color: c, fontFamily: FONTS.head, fontVariant: ['tabular-nums'] }}>{shown}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         {/* signal */}
         <Svg width={18} height={12} viewBox="0 0 18 12">

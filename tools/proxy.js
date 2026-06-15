@@ -22,6 +22,11 @@ const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, 
 
 // Single in-memory cookie jar (one dev session).
 const jar = new Map();
+if (process.env.YAMIBO_AUTH && process.env.YAMIBO_SALTKEY) {
+  const prefix = process.env.YAMIBO_COOKIEPRE || 'EeqY_2132_';
+  jar.set(`${prefix}auth`, process.env.YAMIBO_AUTH);
+  jar.set(`${prefix}saltkey`, process.env.YAMIBO_SALTKEY);
+}
 function cookieHeader() {
   return Array.from(jar.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
 }
@@ -66,6 +71,29 @@ function pipeImage(imageUrl, res, redirectsLeft = 3) {
   });
 }
 
+function resolveUrl(input, res, redirectsLeft = 5) {
+  const target = new URL(input);
+  const client = target.protocol === 'https:' ? https : http;
+  const headers = { 'User-Agent': UA, 'Accept': 'text/html,*/*', 'Referer': TARGET + '/' };
+  if (target.origin === TARGET && jar.size) headers.Cookie = cookieHeader();
+  const r = client.get(target, { headers }, (upstream) => {
+    storeSetCookies(upstream.headers['set-cookie']);
+    const location = upstream.headers.location;
+    if (location && upstream.statusCode >= 300 && upstream.statusCode < 400 && redirectsLeft > 0) {
+      upstream.resume();
+      resolveUrl(new URL(location, target).toString(), res, redirectsLeft - 1);
+      return;
+    }
+    upstream.resume();
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ url: target.toString() }));
+  });
+  r.on('error', (e) => {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: String(e) }));
+  });
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -82,6 +110,17 @@ const server = http.createServer((req, res) => {
       return;
     }
     pipeImage(imageUrl, res);
+    return;
+  }
+
+  if (req.url.startsWith('/__resolve?')) {
+    const input = new URL(req.url, 'http://localhost').searchParams.get('url');
+    if (!input || !/^https?:\/\//i.test(input)) {
+      res.writeHead(400);
+      res.end('invalid URL');
+      return;
+    }
+    resolveUrl(input, res);
     return;
   }
 

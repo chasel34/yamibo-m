@@ -6,6 +6,7 @@ import { avatarUrl, stripHtml, excerptText, groupTitleText, timeFromUnix, parseM
 import type {
   Me, Notice, ForumIndexData, BoardData, ThreadData, ThreadImage,
   UserProfile, CollectionItem, ListResult, Reminder, PMItem, ThreadType, BoardSummary, ForumGroup, BoardSub, SortMode, PinnedItem,
+  ReadingStreamPage, ReadingComment,
 } from './types';
 
 export const PROXY = 'http://localhost:8089';
@@ -176,7 +177,7 @@ export async function getThread(tid: string, page: string | number = 1): Promise
   floors.forEach((f: any) => f.blocks.forEach((b: any) => { if (b.t === 'img') images.push({ src: b.src, cap: b.cap }); }));
   const op = floors.find((f: any) => f.op) || floors[0] || { user: {}, time: '' };
   const thread = {
-    tid, title: stripHtml(th.subject || ''),
+    tid, fid: String(v.fid || th.fid || ''), title: stripHtml(th.subject || ''),
     replies: parseInt(th.replies || '0', 10),
     views: th.views,
     pinned: parseInt(th.displayorder || '0', 10) > 0,
@@ -185,6 +186,78 @@ export async function getThread(tid: string, page: string | number = 1): Promise
   };
   const totalPages = Math.max(1, Math.ceil((thread.replies + 1) / ppp));
   return { thread, floors, images, ppp, page: currentPage, hasMore: currentPage < totalPages };
+}
+
+export async function getReadingStream(tid: string, authorid: string, page = 1): Promise<ReadingStreamPage> {
+  const v = (await request('viewthread', { tid, authorid, page })).Variables || {};
+  const th = v.thread || {};
+  const ppp = parseInt(v.ppp || '20', 10);
+  const replies = parseInt(th.replies || '0', 10);
+  const posts = (v.postlist || []).filter((p: any) => p.number != null).map((p: any) => ({
+    pid: String(p.pid || ''),
+    number: parseInt(p.number || p.position || '0', 10),
+    pos: parseInt(p.position || p.number || '0', 10),
+    blocks: parseMessage(p.message, p.attachments, p.imagelist),
+  }));
+  const op = (v.postlist || []).find((p: any) => p.first === '1') || (v.postlist || [])[0] || {};
+  return {
+    tid,
+    fid: String(v.fid || th.fid || ''),
+    title: stripHtml(th.subject || ''),
+    author: { name: op.author, uid: op.authorid },
+    posts,
+    page,
+    ppp,
+    totalPages: Math.max(1, Math.ceil((replies + 1) / ppp)),
+  };
+}
+
+async function resolvePostPage(tid: string, pid: string): Promise<number> {
+  const target = `${HOST}/forum.php?mod=redirect&goto=findpost&ptid=${encodeURIComponent(tid)}&pid=${encodeURIComponent(pid)}`;
+  if (Platform.OS === 'web') {
+    const res = await fetch(`${PROXY}/__resolve?url=${encodeURIComponent(target)}`);
+    if (!res.ok) throw new Error('无法定位章节评论');
+    const data = await res.json();
+    const match = String(data.url || '').match(/[?&]page=(\d+)/);
+    return match ? parseInt(match[1], 10) : 1;
+  }
+  const res = await fetch(target, { redirect: 'follow' });
+  const match = String(res.url || '').match(/[?&]page=(\d+)/);
+  return match ? parseInt(match[1], 10) : 1;
+}
+
+export async function getChapterComments(tid: string, pid: string, authorid: string, pageHint?: number): Promise<ReadingComment[]> {
+  // Prefer the caller's page hint (derived from the post's unfiltered floor position)
+  // to skip the findpost redirect round-trip; fall back to resolving when absent.
+  let page = pageHint && pageHint > 0 ? pageHint : await resolvePostPage(tid, pid);
+  const out: ReadingComment[] = [];
+  let foundChapter = false;
+  while (true) {
+    const v = (await request('viewthread', { tid, page })).Variables || {};
+    const posts = (v.postlist || []).filter((p: any) => p.number != null);
+    const ppp = parseInt(v.ppp || '20', 10);
+    const replies = parseInt(v.thread?.replies || '0', 10);
+    const totalPages = Math.max(1, Math.ceil((replies + 1) / ppp));
+    let start = 0;
+    if (!foundChapter) {
+      const index = posts.findIndex((p: any) => String(p.pid) === pid);
+      if (index < 0) return [];
+      foundChapter = true;
+      start = index + 1;
+    }
+    for (let i = start; i < posts.length; i += 1) {
+      const p = posts[i];
+      if (String(p.authorid) === authorid) return out;
+      out.push({
+        id: String(p.pid || `${page}-${i}`),
+        user: { name: p.author, uid: p.authorid },
+        time: timeFromUnix(p.dbdateline) || p.dateline || '',
+        text: stripHtml(p.message || ''),
+      });
+    }
+    if (page >= totalPages) return out;
+    page += 1;
+  }
 }
 
 // ===================== Profile =====================

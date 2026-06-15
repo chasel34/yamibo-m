@@ -41,6 +41,9 @@ const SMILEY_CODE_RE = /\{:[\w]+_\d+:\}/g;
 export function stripHtml(html?: string | null): string {
   if (!html) return '';
   let s = String(html)
+    // Drop <style>/<script> blocks entirely — their inner CSS/JS text must not
+    // leak into the body (e.g. Discuz 折叠/showcollapse injects a <style> block).
+    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
     .replace(/<(?:span|font)\b[^>]*(?:display\s*:\s*none|class\s*=\s*["']jammer["'])[^>]*>[\s\S]*?<\/(?:span|font)>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')

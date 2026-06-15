@@ -9,6 +9,7 @@ import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
 import { getThread } from '../api';
 import { recordThread } from '../history';
+import { LITERATURE_FIDS } from '../reading';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Block, Floor as FloorType, ThreadData, ThreadImage, ThreadNavParam, RootStackParamList } from '../types';
 
@@ -68,7 +69,7 @@ function Floor({ f, onImg, onLink, onUnavailable }: { f: FloorType; onImg?: (src
 
 export default function ThreadScreen({ route }: NativeStackScreenProps<RootStackParamList, 'thread'>) {
   const paramThread: ThreadNavParam = route.params?.thread || {};
-  const tid = (paramThread.tid || paramThread.id) as string;
+  const tid = (route.params?.tid || paramThread.tid || paramThread.id) as string;
   const board = route.params?.board;
   const nav = useNav();
   const { t } = useTheme();
@@ -135,11 +136,21 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   const thread = data?.thread || paramThread;
   const floors = data?.floors || [];
+  // 文学区（小说/翻译）帖子一律提供阅读模式入口，只需楼主 uid 可做 authorid 过滤。
+  const readingCandidate = !!data
+    && LITERATURE_FIDS.has(String(data.thread.fid || board?.fid || ''))
+    && !!data.thread.author?.uid;
+  const openReader = (fresh?: boolean) => {
+    if (!data?.thread.author?.uid) return;
+    nav.push('reader', { tid, authorid: data.thread.author.uid, fresh });
+  };
 
   return (
     <Screen>
       <NavHeader title="" onBack={nav.pop}
-        right={<NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>} />
+        right={readingCandidate
+          ? <Pressable onPress={() => openReader()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}><Icon name="book" size={18} color="#fff" /></Pressable>
+          : <NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>} />
 
       {error ? <ErrorView message={error} onRetry={load} />
         : !data ? <Loader label="加载帖子…" />
