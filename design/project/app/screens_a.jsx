@@ -1,4 +1,4 @@
-const { Icon, Lily, StatusBar, Toggle, Avatar, StripeImg, NavHeader } = window;
+const { Icon, Lily, StatusBar, Toggle, Avatar, StripeImg, NavHeader, Pager } = window;
 
 // ===================== Flat feed item (no card) =====================
 const FeedItem = ({t, onOpen, idx=0, showBoard=false}) => (
@@ -124,43 +124,45 @@ const PinnedRow = ({item, onOpen}) => {
   );
 };
 
-// ===================== Board thread list (flat feed) =====================
+// ===================== Board thread list (分页) =====================
 const BoardScreen = ({board}) => {
   const nav = window.useNav();
   const D = window.DATA;
-  const data = React.useMemo(()=> D.threadsFor(board), [board]);
+  const data = React.useMemo(()=> D.threadsFor(board), [board]);   // pinned
+  const full = React.useMemo(()=> D.fullListFor(board), [board]);  // 完整列表
   const [sort, setSort] = React.useState("全部");
   const [cat, setCat] = React.useState(null);      // null = 全部
-  const [extra, setExtra] = React.useState([]);
+  const [page, setPage] = React.useState(1);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
   const [pull, setPull] = React.useState(0);
   const scRef = React.useRef(null);
   const drag = React.useRef({active:false, y0:0});
 
   const cats = board.cats || [];
+  const PER = 20;
 
-  // pinned only on the default tab, and not filtered into a non-公告 category
-  const showPinned = (sort==="全部") && (cat===null || cat==="公告");
+  // filter
+  let filtered = full;
+  if(cat) filtered = filtered.filter(t=> t.cat===cat);
+  if(sort==="精华") filtered = filtered.filter(t=> t.essence);
+  else if(sort==="热门") filtered = filtered.slice().sort((a,b)=> (b.replies||0)-(a.replies||0));
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length/PER));
+  const pageC = Math.min(page, totalPages);
+  const list = filtered.slice((pageC-1)*PER, pageC*PER);
+
+  // pinned 仅第一页顶部
+  const showPinned = (sort==="全部") && (cat===null || cat==="公告") && pageC===1;
   const pinned = showPinned ? data.pinned : [];
 
-  let list = data.list.concat(extra);
-  if(cat) list = list.filter(t=> t.cat===cat);
-  if(sort==="精华") list = list.filter(t=> t.essence);
-  else if(sort==="热门") list = list.slice().sort((a,b)=> (b.replies||0)-(a.replies||0));
+  // 筛选变化 → 回到第一页；翻页 → 滚回顶部
+  React.useEffect(()=>{ setPage(1); }, [sort, cat]);
+  React.useEffect(()=>{ if(scRef.current) scRef.current.scrollTo({top:0, behavior:"auto"}); }, [pageC]);
 
   const doRefresh = () => { setRefreshing(true); setTimeout(()=>{ setRefreshing(false); setPull(0); nav.toast("已是最新内容"); }, 1100); };
   const onPointerDown = (e)=>{ if(scRef.current && scRef.current.scrollTop<=0){ drag.current={active:true, y0:e.clientY}; } };
   const onPointerMove = (e)=>{ if(!drag.current.active) return; const dy=e.clientY-drag.current.y0; if(dy>0 && scRef.current.scrollTop<=0){ setPull(Math.min(dy*0.5, 70)); } };
   const onPointerUp = ()=>{ if(!drag.current.active) return; drag.current.active=false; if(pull>46){ doRefresh(); } else { setPull(0); } };
-
-  const onScroll = (e)=>{
-    const el=e.target;
-    if(el.scrollTop+el.clientHeight >= el.scrollHeight-60 && !loadingMore && extra.length < data.list.length*2){
-      setLoadingMore(true);
-      setTimeout(()=>{ setExtra(prev=>[...prev, ...data.list.map((t,i)=>({...t, id:t.id+"_x"+prev.length+i}))]); setLoadingMore(false); }, 800);
-    }
-  };
 
   const openThread = (th)=> nav.push("thread", {thread:th, board});
 
@@ -168,7 +170,7 @@ const BoardScreen = ({board}) => {
     <>
       <StatusBar/>
       <NavHeader title={board.name} onBack={nav.pop} right={<div className="navback" onClick={()=>nav.toast("版规：友善交流，禁止剧透与上升")}><Icon name="info" size={19}/></div>}/>
-      <div className="scroll" ref={scRef} onScroll={onScroll}
+      <div className="scroll" ref={scRef}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
         <div className={"ptr"+(pull>4||refreshing?" show":"")} style={!refreshing?{height:pull}:{}}>
           {refreshing ? <><span className="spin"></span>正在刷新…</> : <>{pull>46?"释放刷新":"下拉刷新"}</>}
@@ -209,12 +211,12 @@ const BoardScreen = ({board}) => {
           <div className="feed-div" style={{margin:0}}></div>
         </div>
 
-        {/* sub-boards (子板块) — compact single row, placed under the tags */}
+        {/* sub-boards (子板块) */}
         {board.subs && board.subs.length>0 && (
           <>
             <div className="kicker" style={{padding:"13px 22px 10px"}}>子板块</div>
             <div style={{display:"flex", gap:8, padding:"0 22px 14px"}}>
-              {board.subs.map(s=> <SubBoardChip key={s.id} s={s} onOpen={(sb)=>{ setExtra([]); nav.push("board",{board:sb}); }}/>)}
+              {board.subs.map(s=> <SubBoardChip key={s.id} s={s} onOpen={(sb)=>{ nav.push("board",{board:sb}); }}/>)}
             </div>
             <div className="feed-div"></div>
           </>
@@ -232,16 +234,21 @@ const BoardScreen = ({board}) => {
           </React.Fragment>
         ))}
 
-        {/* empty / loading */}
+        {/* empty */}
         {pinned.length===0 && list.length===0 && (
           <div className="serif" style={{textAlign:"center", fontSize:13, color:"var(--faint)", padding:"36px 22px"}}>
             {sort==="精华" ? "这个分类下还没有精华帖" : "这里还没有内容"}
           </div>
         )}
-        <div style={{height:loadingMore?44:18, display:"flex", alignItems:"center", justifyContent:"center", gap:8, color:"var(--muted)", fontFamily:"var(--font-head)", fontSize:12.5}}>
-          {loadingMore ? <><span className="spin"></span>加载更多…</> : (extra.length>=data.list.length*2 && list.length>0 ? "—  没有更多了  —":"")}
-        </div>
-        <div style={{height:12}}></div>
+
+        {/* pager */}
+        {list.length>0 && (
+          <>
+            <div className="feed-div"></div>
+            <Pager page={pageC} totalPages={totalPages} onJump={setPage} cap={`共 ${filtered.length} 帖 · 每页 ${PER} 条`}/>
+          </>
+        )}
+        <div style={{height:14}}></div>
       </div>
     </>
   );

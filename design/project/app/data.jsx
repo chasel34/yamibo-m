@@ -210,10 +210,28 @@ window.DATA = (function(){
     {title:"新人第一帖，请多关照（附自推清单）", excerpt:"潜水很久终于注册了，附上这些年最爱的几部，求同好交流。", image:false},
     {title:"整理了一份入坑指南，会持续更新", excerpt:"按时间线和题材分了类，新人友好，老观众也欢迎补充纠错。", image:true, imgCap:"整理图 · 入坑指南"},
   ];
+  // 翻页填充用的扩充帖池（增加每页内容多样性）
+  const EXT_POOL = [
+    {title:"年度盘点：那些让我「DNA 动了」的名场面", excerpt:"按播出年份排了个序，每部挑一格最戳我的画面，欢迎大家补充。", image:true, imgCap:"盘点图 · 名场面"},
+    {title:"冷门安利：这部被严重低估，真的没人看吗", excerpt:"播出时几乎没水花，但质量在线，剧情和作画都很稳，强烈安利。", image:false},
+    {title:"讨论：百合作品里你最吃哪种「关系张力」", excerpt:"青梅竹马、欢喜冤家、师生、上下属……来聊聊各自的本命设定。", image:false},
+    {title:"汉化进度同步贴（每周更新，置顶勿沉）", excerpt:"本周已嵌字校对完成，预计周末放出，感谢大家的耐心等待。", image:false},
+    {title:"资源整理：高清扫图与字体打包，自取", excerpt:"整理了一份网盘合集，含扫图、字体与嵌字模板，长期有效。", image:true, imgCap:"资源图 · 打包预览"},
+    {title:"作画考据：这个分镜其实致敬了二十年前的老番", excerpt:"对比了两组画面，构图和运镜几乎一致，作者明显是老观众。", image:true, imgCap:"对照图 · 分镜致敬"},
+    {title:"求助：手机端阅读哪个客户端体验最好？", excerpt:"用过几个都不太顺手，想找个排版舒服、夜间模式好用的，求推荐。", image:false},
+    {title:"自割腿肉：随手写了段小甜饼，请笑纳", excerpt:"睡前脑洞产物，没怎么校对，逻辑别太较真，单纯图一乐。", image:false},
+    {title:"投票：下一期共读选哪一部？三选一", excerpt:"列了三个候选，评论区扣 1/2/3，下周根据票数开新楼。", image:false},
+    {title:"补番记录：一口气刷完，来还愿了", excerpt:"拖了好久终于补完，结果一晚上看完，后劲太大睡不着，记录一下。", image:false},
+    {title:"细节党：第几集那一帧，背景里藏了彩蛋", excerpt:"逐帧看才发现的，背景海报上的字其实是后面剧情的伏笔。", image:true, imgCap:"彩蛋图 · 背景细节"},
+    {title:"长评 | 关于「成长」与「告别」的一点私货", excerpt:"写得有点长也有点私人，权当一个老观众的碎碎念，轻喷。", image:false},
+    {title:"新人提问：入坑顺序有讲究吗，从哪部开始好", excerpt:"完全的新人，作品太多无从下手，想问问大家推荐的入坑路线。", image:false},
+    {title:"周边晒单：终于集齐了这一套，圆满了", excerpt:"花了大半年才凑齐，开箱晒一下，附购买渠道避雷提醒。", image:true, imgCap:"晒单图 · 周边合影"},
+  ];
   const _uarr = [users.a, users.b, users.c, users.d, users.e, users.f];
   const _gtimes = ["12分钟前","1小时前","2小时前","4小时前","昨天","前天"];
   const _gviews = ["3.2k","1.1k","8.4k","2.7k","960","1.9k"];
   const _greplies = [128,42,516,97,18,64];
+  const _rtimes = ["38分钟前","32分钟前","27分钟前","20分钟前","15分钟前","11分钟前","8分钟前","5分钟前","3分钟前","刚刚"];
   function genThreads(board){
     const cats = (board.cats||[]).filter(c=>c!=="公告");
     return GEN_POOL.map((g,i)=>({
@@ -227,6 +245,34 @@ window.DATA = (function(){
   }
 
   const AUTHORED = { acg:threads, lit:litThreads, lit_ln:lnThreads };
+
+  // ---- 板块总帖数（确定性，便于稳定分页）----
+  function boardTotal(board){
+    let h=0; for(let i=0;i<board.id.length;i++) h=(h*31+board.id.charCodeAt(i))>>>0;
+    const pages = 4 + (h % 13);     // 4..16 页
+    const partial = 1 + (h % 20);   // 末页 1..20 条
+    return (pages-1)*20 + partial;
+  }
+  // 返回某板块「完整」帖子列表（真实帖在前，其余确定性生成填充）
+  function fullListFor(board){
+    const base = (AUTHORED[board.id] || genThreads(board)).slice();
+    const total = Math.max(base.length, boardTotal(board));
+    const cats = (board.cats||[]).filter(c=>c!=="公告");
+    const POOL = GEN_POOL.concat(EXT_POOL);
+    const out = base.slice();
+    for(let i=base.length; i<total; i++){
+      const g = POOL[i % POOL.length];
+      out.push({
+        id: board.id+"_f"+i, board:board.id,
+        cat: cats.length? cats[(i*2) % cats.length] : board.name,
+        tag: cats.length? cats[(i*2) % cats.length] : board.name,
+        title: g.title, author:_uarr[(i*3+1) % _uarr.length], time:_gtimes[i % _gtimes.length],
+        views:_gviews[i % _gviews.length], replies:_greplies[i % _greplies.length],
+        excerpt:g.excerpt, image:g.image, imgCap:g.imgCap, essence:(i%4===0),
+      });
+    }
+    return out;
+  }
 
   // returns { pinned:[...], list:[...] } for any board
   function threadsFor(board){
@@ -264,6 +310,42 @@ window.DATA = (function(){
       ] },
   ];
 
+  // ---- 帖子楼层（按帖确定性生成：1楼=楼主，其余为回复）----
+  function _opFloor(thread){
+    const blocks = [{t:"text", v: thread.excerpt || "楼主暂未填写正文。"}];
+    if(thread.image) blocks.push({t:"img", cap: thread.imgCap || "楼主配图"});
+    blocks.push({t:"text", v:"以上为楼主原帖。理性讨论，禁止剧透与上升真人，谢谢配合。"});
+    return { floor:1, op:true, user:thread.author, time:thread.time, blocks };
+  }
+  function _replyBlocks(i, thread){
+    const q = (thread.excerpt||"").slice(0,15);
+    const V = [
+      [{t:"text", v:"沙发！感谢楼主，这一篇真的戳到我了。"}],
+      [{t:"text", v:"蹲一个后续，手机端看着方便，先码住慢慢看。"}],
+      [{t:"quote", who:thread.author.name, v:q+"…"},{t:"text", v:"这一段我也很有共鸣，留白处理得很高级。"}],
+      [{t:"text", v:"理性讨论，不要上升真人。就作品论作品我是赞同楼主的。"},{t:"emoji", v:"(*ﾟ▽ﾟ*)"}],
+      [{t:"text", v:"考据了一下，这里其实呼应了前面的伏笔，作者很会埋线。"}],
+      [{t:"img", cap:"读者贺图"},{t:"text", v:"手痒画了张图，献丑了～"}],
+      [{t:"text", v:"十年老粉路过，谢谢你们陪我到现在，泪目。"}],
+      [{t:"text", v:"占楼支持，等更新。楼主加油，不要太监啊！"}],
+      [{t:"text", v:"已收藏，写得太好了，求楼主开个长期连载。"}],
+    ];
+    return V[i % V.length];
+  }
+  function floorsFor(thread){
+    const N = Math.min(thread.replies || 0, 360);  // 上限保护
+    const arr = [ _opFloor(thread) ];
+    for(let i=0;i<N;i++){
+      arr.push({
+        floor: i+2, op:false,
+        user: _uarr[(i+1) % _uarr.length],
+        time: _rtimes[i % _rtimes.length],
+        blocks: _replyBlocks(i, thread),
+      });
+    }
+    return arr;
+  }
+
   const reminders = [
     {id:"r1", type:"reply", icon:"reply", unread:true, who:"灯子的领带", text:"回复了你的主题「摇曳百合 第八季制作决定」", time:"12分钟前"},
     {id:"r2", type:"at", icon:"at", unread:true, who:"comaki", text:"在「孤独摇滚 算百合吗」中 @ 了你", time:"1小时前"},
@@ -277,5 +359,5 @@ window.DATA = (function(){
     {id:"d3", user:users.f, last:"婚后日常那个坑我也想接一棒！", time:"昨天", unread:0},
   ];
 
-  return { ME, OTHER, groups, hot, tags, sortModes, threads, threadsFor, floors, reminders, dms, users };
+  return { ME, OTHER, groups, hot, tags, sortModes, threads, threadsFor, fullListFor, floors, floorsFor, reminders, dms, users };
 })();

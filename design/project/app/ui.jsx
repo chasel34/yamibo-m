@@ -156,8 +156,55 @@ const TabBar = ({active, onTab}) => (
 // ===================== Toast hook =====================
 const Toast = ({msg}) => msg ? <div className="toast">{msg}</div> : null;
 
+// ===================== Pager (论坛式分页 · 安静排版风) =====================
+const Pager = ({page, totalPages, onJump, cap, extra}) => {
+  const [val, setVal] = React.useState(String(page));
+  React.useEffect(()=>{ setVal(String(page)); }, [page]);
+  const clamp = (p)=> Math.max(1, Math.min(totalPages, p));
+  const go = (p)=>{ onJump(clamp((p|0)||1)); };
+  const commit = ()=>{ const n=parseInt(val,10); if(n) go(n); else setVal(String(page)); };
+  const atFirst = page<=1, atLast = page>=totalPages;
+
+  // 单页：不显示翻页控件，仅保留底部说明
+  if(totalPages<=1){
+    return (cap||extra) ? (
+      <div style={{padding:"18px 0 6px"}}>
+        {cap && <div className="pgcap" style={{padding:"0 22px"}}>{cap}</div>}
+        {extra && <div className="pgextra">{extra}</div>}
+      </div>
+    ) : null;
+  }
+
+  return (
+    <div style={{padding:"8px 0 2px"}}>
+      <div className="pager">
+        <button className={"pgnav"+(atFirst?" off":"")} onClick={()=>go(page-1)}>
+          <Icon name="back" size={15}/>上一页
+        </button>
+        <div className="pgcur">
+          <span className="pgcur-l">第</span>
+          <input className="pginput" inputMode="numeric" value={val}
+            onChange={e=>setVal(e.target.value.replace(/[^0-9]/g,""))}
+            onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); commit(); e.target.blur(); } }}
+            onBlur={commit}/>
+          <span className="pgcur-l">/ {totalPages} 页</span>
+        </div>
+        <button className={"pgnav"+(atLast?" off":"")} onClick={()=>go(page+1)}>
+          下一页<Icon name="chevRight" size={15}/>
+        </button>
+      </div>
+      {(cap||extra) && (
+        <>
+          {cap && <div className="pgcap">{cap}</div>}
+          {extra && <div className="pgextra">{extra}</div>}
+        </>
+      )}
+    </div>
+  );
+};
+
 // export
 Object.assign(window, {
   Icon, Lily, StatusBar, Toggle, Avatar, GroupPill, GROUP_TONES,
-  StripeImg, NavHeader, TabBar, TABS, Toast, shade,
+  StripeImg, NavHeader, TabBar, TABS, Toast, shade, Pager,
 });

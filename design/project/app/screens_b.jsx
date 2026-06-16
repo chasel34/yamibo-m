@@ -1,4 +1,4 @@
-const { Icon: Ic, StatusBar: SB, Avatar: Av, GroupPill: GP, StripeImg: SI, NavHeader: NH } = window;
+const { Icon: Ic, StatusBar: SB, Avatar: Av, GroupPill: GP, StripeImg: SI, NavHeader: NH, Pager: Pg } = window;
 
 // ===================== Rich-text floor block =====================
 const FloorBlock = ({b, onImg}) => {
@@ -25,7 +25,7 @@ const Floor = ({f, onImg, idx}) => (
         </div>
         <div className="timestamp" style={{fontSize:12, marginTop:2}}>{f.time}</div>
       </div>
-      <span style={{fontFamily:"var(--font-head)", fontSize:13, fontWeight:600, color:"var(--faint)"}}>{f.floor===1?"":"#"+f.floor}</span>
+      <span className="floor-label">{f.floor===1?"":f.floor+"楼"}</span>
     </div>
     <div style={{paddingLeft:2}}>
       {f.blocks.map((b,i)=> <FloorBlock key={i} b={b} onImg={onImg}/>)}
@@ -74,14 +74,76 @@ const ReaderEntry = ({thread}) => {
   );
 };
 
+// ===================== Floor jump (按楼层定位 · 内联文字风) =====================
+const FloorJump = ({onLocate}) => {
+  const [v, setV] = React.useState("");
+  const go = ()=>{ const n=parseInt(v,10); if(n){ onLocate(n); setV(""); } };
+  return (
+    <span className="fjrow">
+      <span className="fjlabel">跳至</span>
+      <input className="fjinput" inputMode="numeric" value={v}
+        onChange={e=>setV(e.target.value.replace(/[^0-9]/g,""))}
+        onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); go(); e.target.blur(); } }}/>
+      <span className="fjlabel">楼</span>
+      <span className="fjgo" onClick={go}>定位</span>
+    </span>
+  );
+};
+
+const PER_FLOOR = 10;
 const ThreadScreen = ({thread, board}) => {
   const nav = window.useNav();
   const D = window.DATA;
   const [fav, setFav] = React.useState(false);
   const isNovel = !!(thread.novelId && window.BOOKS && window.BOOKS.get(thread.novelId));
-  const floors = D.floors;
-  const allImgs = floors.flatMap(f=> f.blocks.filter(b=>b.t==="img").map(b=>({cap:b.cap})));
+  const all = React.useMemo(()=> D.floorsFor(thread), [thread]);   // all[0] = 1楼(楼主)
+  const totalFloors = all.length;
+  const totalPages = Math.max(1, Math.ceil(totalFloors/PER_FLOOR));
+  const [page, setPage] = React.useState(1);
+  const pageC = Math.min(page, totalPages);
+  const scRef = React.useRef(null);
+  const pending = React.useRef(null);
+  const [flash, setFlash] = React.useState(null);
+
+  const startFloor = (pageC-1)*PER_FLOOR + 1;
+  const endFloor = Math.min(pageC*PER_FLOOR, totalFloors);
+  const showOP = startFloor===1;                          // 楼主仅第一页
+  const pageFloors = all.slice(startFloor-1, endFloor);   // 含楼主（第一页）
+  const replyFloors = showOP ? pageFloors.slice(1) : pageFloors;
+
+  // 图片查看器：仅本页可见楼层
+  const allImgs = pageFloors.flatMap(f=> f.blocks.filter(b=>b.t==="img").map(b=>({cap:b.cap})));
   const openImg = (cap)=>{ const idx = Math.max(0, allImgs.findIndex(i=>i.cap===cap)); nav.openViewer(allImgs.length?allImgs:[{cap}], idx); };
+
+  const scrollToFloor = (f, smooth)=>{
+    const run = (behavior)=>{
+      const el = document.getElementById("floor-"+f);
+      const sc = scRef.current;
+      if(el && sc){
+        const cr = sc.getBoundingClientRect();
+        const er = el.getBoundingClientRect();
+        const target = Math.max(0, sc.scrollTop + (er.top - cr.top) - 54);
+        sc.scrollTo({top: target, behavior});
+      }
+    };
+    // settle after the freshly-rendered page is laid out; retry once (instant) to catch late layout on page change
+    setTimeout(()=>{ run(smooth?"smooth":"auto"); setFlash(f); }, 40);
+    if(!smooth) setTimeout(()=> run("auto"), 200);
+    setTimeout(()=> setFlash(null), 1900);
+  };
+  const locate = (f)=>{
+    f = Math.max(1, Math.min(totalFloors, (f|0)||1));
+    const tp = Math.ceil(f/PER_FLOOR);
+    if(tp===pageC){ scrollToFloor(f, true); }
+    else { pending.current=f; setPage(tp); }
+  };
+  const goPage = (n)=>{ pending.current=null; setPage(n); };
+
+  React.useEffect(()=>{
+    if(pending.current!=null){ const f=pending.current; pending.current=null; scrollToFloor(f, false); }
+    else if(scRef.current){ scRef.current.scrollTo({top:0, behavior:"auto"}); }
+  }, [pageC]);
+
   return (
     <>
       <SB/>
@@ -89,34 +151,60 @@ const ThreadScreen = ({thread, board}) => {
         right={isNovel
           ? <div className="navback" style={{background:"var(--accent)", color:"#fff"}} onClick={()=>nav.push("reader",{bookId:thread.novelId})}><Ic name="book" size={18}/></div>
           : <div className="navback" onClick={()=>nav.toast("分享：敬请期待")}><Ic name="share" size={18}/></div>}/>
-      <div className="scroll" style={{paddingBottom:8}}>
+      <div className="scroll" ref={scRef} style={{paddingBottom:8}}>
         {/* title block */}
         <div style={{padding:"2px 22px 18px"}}>
-          <div className="kicker" style={{marginBottom:14}}>{board ? board.name : "帖子"}{thread.pinned ? "  ·  置顶" : ""}</div>
+          <div className="kicker" style={{marginBottom:14}}>{board ? board.name : "帖子"}{thread.pinned ? "  ·  置顶" : ""}{totalPages>1 ? "  ·  第 "+pageC+"/"+totalPages+" 页" : ""}</div>
           <div className="headline" style={{fontSize:26, lineHeight:1.34, marginBottom:20}}>{thread.title}</div>
           <div className="row" style={{gap:11}}>
             <Av user={thread.author} size={38}/>
             <div style={{flex:1}}>
-              <div style={{fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:600, color:"var(--ink)"}}>{thread.author.name}</div>
+              <div className="row" style={{gap:8}}>
+                <span style={{fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:600, color:"var(--ink)"}}>{thread.author.name}</span>
+                <span style={{fontFamily:"var(--font-head)", fontSize:11, fontWeight:700, color:"var(--accent-ink)"}}>楼主</span>
+              </div>
               <div className="timestamp" style={{fontSize:12, marginTop:2}}>{thread.author.group} · {thread.time}</div>
             </div>
           </div>
         </div>
         <div className="feed-div"></div>
-        {/* OP body (first floor, flowing) */}
-        <div style={{padding:"22px 22px 8px"}}>
-          {floors[0].blocks.map((b,i)=> <FloorBlock key={i} b={b} onImg={openImg}/>)}
+
+        {/* OP body — 仅第一页 */}
+        {showOP && (
+          <div id="floor-1" className={flash===1?"floor-flash":""}>
+            <div className="row" style={{padding:"12px 22px 0", justifyContent:"flex-end"}}>
+              <span className="floor-label">1楼 · 楼主</span>
+            </div>
+            <div style={{padding:"6px 22px 8px"}}>
+              {all[0].blocks.map((b,i)=> <FloorBlock key={i} b={b} onImg={openImg}/>)}
+            </div>
+          </div>
+        )}
+
+        {/* replies header */}
+        <div className="row" style={{padding:"16px 22px 0", justifyContent:"flex-start", alignItems:"center"}}>
+          <span className="kicker">{thread.replies} 条回复</span>
         </div>
-        {/* replies */}
-        <div className="kicker" style={{padding:"14px 22px 0"}}>{thread.replies} 条回复</div>
         <div className="feed-div" style={{margin:"14px 22px 0"}}></div>
-        {floors.slice(1).map((f,i)=>(
+
+        {/* replies on this page */}
+        {replyFloors.length===0 && (
+          <div className="serif" style={{textAlign:"center", fontSize:13, color:"var(--faint)", padding:"30px 22px"}}>本页暂无回复</div>
+        )}
+        {replyFloors.map((f,i)=>(
           <React.Fragment key={f.floor}>
-            <Floor f={f} idx={i} onImg={openImg}/>
-            {i<floors.length-2 && <div className="feed-div" style={{margin:"0 22px"}}></div>}
+            <div id={"floor-"+f.floor} className={flash===f.floor?"floor-flash":""}>
+              <Floor f={f} idx={i} onImg={openImg}/>
+            </div>
+            {i<replyFloors.length-1 && <div className="feed-div" style={{margin:"0 22px"}}></div>}
           </React.Fragment>
         ))}
-        <div className="serif" style={{textAlign:"center", fontSize:12, color:"var(--faint)", padding:"22px 0 18px"}}>—  到底啦  —</div>
+
+        {/* pager (含按楼层定位) */}
+        <Pg page={pageC} totalPages={totalPages} onJump={goPage}
+          cap={"共 "+totalFloors+" 楼 · 每页 "+PER_FLOOR+" 楼"}
+          extra={totalFloors>PER_FLOOR ? <FloorJump onLocate={locate}/> : null}/>
+        <div style={{height:8}}></div>
       </div>
       {/* fixed action bar — v1 read only */}
       <div style={{flex:"0 0 auto", padding:"8px 18px", paddingBottom:14, borderTop:"1px solid var(--line)", display:"flex", gap:14, alignItems:"center",

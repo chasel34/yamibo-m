@@ -265,6 +265,37 @@ html[data-theme="dark"] .btn-primary{ color:#241a16; }
 .field:focus{ border-color:var(--accent); background:var(--card); }
 
 .disabled{ opacity:.4; pointer-events:none; }
+
+/* ---- pager (论坛式分页 · 安静排版风) ---- */
+.pager{ display:flex; align-items:center; justify-content:center; gap:18px; padding:20px 22px 0; }
+.pgnav{ display:inline-flex; align-items:center; gap:3px; background:none; border:none; padding:6px 0; cursor:pointer;
+  font-family:var(--font-head); font-size:14px; font-weight:600; color:var(--ink-soft); letter-spacing:.2px; transition:color .15s, opacity .15s; }
+.pgnav:active{ opacity:.55; }
+.pgnav.off{ color:var(--faint); opacity:.45; pointer-events:none; }
+.pgcur{ display:inline-flex; align-items:baseline; gap:5px; flex:0 0 auto; }
+.pgcur-l{ font-family:var(--font-head); font-size:13px; font-weight:500; color:var(--muted); white-space:nowrap; }
+.pginput{ width:30px; text-align:center; border:none; border-bottom:1.5px solid var(--line-strong); border-radius:0;
+  background:transparent; color:var(--ink); font-family:var(--font-head); font-size:17px; font-weight:700;
+  font-variant-numeric:tabular-nums; outline:none; padding:0 0 2px; -moz-appearance:textfield; transition:border-color .15s; }
+.pginput::-webkit-outer-spin-button,.pginput::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+.pginput:focus{ border-bottom-color:var(--accent); }
+.pgcap{ text-align:center; font-family:var(--font-head); font-size:12px; color:var(--faint); padding:11px 22px 4px; letter-spacing:.2px; }
+.pgextra{ display:flex; justify-content:center; padding:5px 22px 4px; }
+
+/* ---- floor jump (帖子内按楼层定位 · 内联文字风) ---- */
+.fjrow{ display:inline-flex; align-items:baseline; gap:5px; }
+.fjlabel{ font-family:var(--font-head); font-size:12px; color:var(--faint); font-weight:500; }
+.fjinput{ width:26px; text-align:center; border:none; border-bottom:1.5px solid var(--line-strong); border-radius:0;
+  background:transparent; color:var(--ink); font-family:var(--font-head); font-size:13.5px; font-weight:700;
+  font-variant-numeric:tabular-nums; outline:none; padding:0 0 1px; transition:border-color .15s; }
+.fjinput:focus{ border-bottom-color:var(--accent); }
+.fjgo{ font-family:var(--font-head); font-size:12px; font-weight:600; color:var(--accent-ink); cursor:pointer; padding-left:2px; }
+.fjgo:active{ opacity:.6; }
+
+/* ---- floor flash (定位高亮) ---- */
+.floor-flash{ animation: floorflash 1.7s ease; }
+@keyframes floorflash{ 0%,16%{ background:var(--accent-soft); } 100%{ background:transparent; } }
+.floor-label{ font-family:var(--font-head); font-size:12px; font-weight:600; color:var(--faint); }
 .home-indicator{ position:absolute; bottom:8px; left:50%; transform:translateX(-50%); width:134px; height:5px; border-radius:3px; background:var(--ink); opacity:.22; z-index:50; }
 </style>
 </head>
