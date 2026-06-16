@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, RefreshControl, ActivityIndicator, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { View, Text, Pressable, ScrollView, RefreshControl } from 'react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
-import { NavHeader, NavBack, FeedItem, SubBoardChip, PinnedRow, Kicker, Divider, HLine } from '../components/ui';
+import { NavHeader, NavBack, FeedItem, SubBoardChip, PinnedRow, Kicker, Divider, HLine, Pager } from '../components/ui';
 import { Loader, ErrorView, EmptyState } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
@@ -26,9 +26,12 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
   const [items, setItems] = React.useState<ThreadRow[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [page, setPage] = React.useState(1);
-  const [hasMore, setHasMore] = React.useState(false);
+  const [totalPages, setTotalPages] = React.useState(1);
+  const [totalThreads, setTotalThreads] = React.useState(0);
+  const [tpp, setTpp] = React.useState(20);
   const [refreshing, setRefreshing] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [paging, setPaging] = React.useState(false);
+  const scRef = React.useRef<ScrollView>(null);
 
   const load = React.useCallback(async (tid: string | number, srt: SortMode, isRefresh?: boolean) => {
     if (isRefresh) setRefreshing(true);
@@ -41,7 +44,9 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
       setPinned(r.pinned);
       setItems(r.threads);
       setPage(1);
-      setHasMore(r.hasMore);
+      setTotalPages(r.totalPages);
+      setTotalThreads(r.totalThreads);
+      setTpp(r.tpp);
     } catch (e) {
       if (items === null) setError(e.message); else nav.toast(e.message);
     } finally {
@@ -51,25 +56,22 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
 
   React.useEffect(() => { load(typeid, sort, false); /* on mount + typeid/sort change */ }, [typeid, sort]); // eslint-disable-line
 
-  const loadMore = async () => {
-    if (loadingMore || !hasMore) return;
-    setLoadingMore(true);
+  const goPage = async (n: number) => {
+    if (paging || n === page) return;
+    setPaging(true);
     try {
-      const next = page + 1;
-      const r = await getBoard(fid, next, typeid, sort);
-      setItems((prev) => [...(prev || []), ...r.threads]);
-      setPage(next);
-      setHasMore(r.hasMore);
+      const r = await getBoard(fid, n, typeid, sort);
+      setItems(r.threads);
+      setPage(n);
+      setTotalPages(r.totalPages);
+      setTotalThreads(r.totalThreads);
+      setTpp(r.tpp);
+      scRef.current?.scrollTo({ y: 0, animated: false });
     } catch (e) {
       nav.toast(e.message);
     } finally {
-      setLoadingMore(false);
+      setPaging(false);
     }
-  };
-
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-    if (contentOffset.y + layoutMeasurement.height >= contentSize.height - 60) loadMore();
   };
 
   const openSub = (s: BoardSub) => nav.push('board', { board: { fid: s.fid, name: s.name } });
@@ -86,9 +88,8 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
         : items === null ? <Loader label="加载帖子…" />
         : (
           <ScrollView
+            ref={scRef}
             showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            onScroll={onScroll}
             stickyHeaderIndices={[1]}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(typeid, sort, true)} tintColor={t.accent} colors={[t.accent]} />}
           >
@@ -137,7 +138,7 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
                 </>
               ) : null}
 
-              {sort === '全部' && pinned.length > 0 ? (
+              {sort === '全部' && page === 1 && pinned.length > 0 ? (
                 <>
                   {pinned.map((p) => <PinnedRow key={p.id} item={p} onOpen={(x) => nav.push('thread', { thread: { tid: x.tid, title: x.title }, board })} />)}
                   {items.length > 0 ? <Divider /> : null}
@@ -152,12 +153,16 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
                   {i < items.length - 1 && <Divider />}
                 </View>
               ))}
-              <View style={{ height: loadingMore ? 44 : 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                {loadingMore ? (
-                  <><ActivityIndicator size="small" color={t.accent} /><Text style={{ color: t.muted, fontFamily: FONTS.head, fontSize: 12.5 }}>加载更多…</Text></>
-                ) : (items.length > 0 && !hasMore ? <Text style={{ color: t.muted, fontFamily: FONTS.head, fontSize: 12.5 }}>—  没有更多了  —</Text> : null)}
-              </View>
-              <View style={{ height: 12 }} />
+
+              {items.length > 0 ? (
+                <>
+                  <Divider />
+                  <View style={{ opacity: paging ? 0.5 : 1 }} pointerEvents={paging ? 'none' : 'auto'}>
+                    <Pager page={page} totalPages={totalPages} onJump={goPage} cap={`共 ${totalThreads || items.length} 帖 · 每页 ${tpp} 条`} />
+                  </View>
+                </>
+              ) : null}
+              <View style={{ height: 14 }} />
             </View>
           </ScrollView>
         )}

@@ -115,7 +115,7 @@ GET ?version=4&module=forumdisplay&fid=49&page=1
 返回 `Variables`：
 | 字段 | 说明 |
 |---|---|
-| `forum` | 板块信息：`fid,name,description,icon,rules(HTML版规),threads,posts,fup(父),threadcount` |
+| `forum` | 板块信息：`fid,name,description,icon,rules(HTML版规),threads(板块总主题数),posts,fup(父),threadcount(按当前筛选的总主题数：无筛选=threads，选 typeid/精华/热门 等会同步变小→用它算总页数)` |
 | `forum_threadlist[]` | 帖子列表（见下）|
 | `threadtypes` | 作品分类标签：`types{ "173":"摇曳百合", ... }`、`required`、`listable` |
 | `sublist` | 子板块 |

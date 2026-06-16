@@ -153,7 +153,14 @@ export async function getBoard(fid: string, page = 1, typeid: string | number = 
     desc: stripHtml(v.forum?.description || ''),
     rules: v.forum?.rules || '',
   };
-  return { board, threads: list, pinned, types, subs, page: parseInt(v.page || page, 10), tpp, hasMore: raw.length >= tpp };
+  const curPage = parseInt(v.page || page, 10);
+  const hasMore = raw.length >= tpp;
+  // forum.threadcount 是「按当前筛选」返回的总主题数（无筛选时等于板块总数 forum.threads，
+  // 选作品分类(typeid)/精华/热门 等会收窄时同步变小，已对线上 API 验证）→ 用它算总页数对所有
+  // 筛选都准确；两者皆缺失时回退到「当前页 + 是否还有下一页」的渐进式判断。
+  const totalThreads = parseInt(v.forum?.threadcount || v.forum?.threads || '0', 10);
+  const totalPages = totalThreads > 0 ? Math.max(1, Math.ceil(totalThreads / tpp)) : curPage + (hasMore ? 1 : 0);
+  return { board, threads: list, pinned, types, subs, page: curPage, tpp, hasMore, totalPages, totalThreads };
 }
 
 // ===================== Thread (viewthread) =====================
@@ -185,7 +192,7 @@ export async function getThread(tid: string, page: string | number = 1): Promise
     time: op.time,
   };
   const totalPages = Math.max(1, Math.ceil((thread.replies + 1) / ppp));
-  return { thread, floors, images, ppp, page: currentPage, hasMore: currentPage < totalPages };
+  return { thread, floors, images, ppp, page: currentPage, hasMore: currentPage < totalPages, totalPages };
 }
 
 export async function getReadingStream(tid: string, authorid: string, page = 1): Promise<ReadingStreamPage> {

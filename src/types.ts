@@ -81,6 +81,8 @@ export interface BoardData {
   page: number;
   tpp: number;
   hasMore: boolean;
+  totalPages: number;
+  totalThreads: number;
 }
 
 // ---- Thread (viewthread) ----
@@ -119,6 +121,7 @@ export interface ThreadData {
   ppp: number;
   page: number;
   hasMore: boolean;
+  totalPages: number;
 }
 
 // ---- Reading mode ----

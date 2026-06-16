@@ -1,8 +1,8 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Linking, LayoutChangeEvent } from 'react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
-import { NavHeader, NavBack, Avatar, Divider, Kicker } from '../components/ui';
+import { NavHeader, NavBack, Avatar, Divider, Kicker, Pager } from '../components/ui';
 import RemoteImage from '../components/RemoteImage';
 import { Loader, ErrorView } from '../components/states';
 import { useNav } from '../useNav';
@@ -48,7 +48,7 @@ function Floor({ f, onImg, onLink, onUnavailable }: { f: FloorType; onImg?: (src
           </View>
           <Text style={{ fontFamily: FONTS.head, fontSize: 12, color: t.muted, fontWeight: '500', marginTop: 2 }}>{f.time}</Text>
         </View>
-        <Text style={{ fontFamily: FONTS.head, fontSize: 13, fontWeight: '600', color: t.faint }}>{f.floor === 1 ? '' : '#' + f.floor}</Text>
+        <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.faint }}>{f.floor === 1 ? '' : f.floor + '楼'}</Text>
       </View>
       <View style={{ paddingLeft: 2 }}>
         {f.blocks.map((b, i) => <FloorBlock key={i} b={b} onImg={onImg} onLink={onLink} />)}
@@ -67,6 +67,37 @@ function Floor({ f, onImg, onLink, onUnavailable }: { f: FloorType; onImg?: (src
   );
 }
 
+// 按楼层定位（内联文字风, ported from .fjrow）
+function FloorJump({ onLocate }: { onLocate: (f: number) => void }) {
+  const { t } = useTheme();
+  const [v, setV] = React.useState('');
+  const [focused, setFocused] = React.useState(false);
+  const go = () => { const n = parseInt(v, 10); if (n) { onLocate(n); setV(''); } };
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
+      <Text style={{ fontFamily: FONTS.head, fontSize: 12, color: t.faint, fontWeight: '500' }}>跳至</Text>
+      <TextInput
+        value={v}
+        onChangeText={(s) => setV(s.replace(/[^0-9]/g, ''))}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onSubmitEditing={go}
+        keyboardType="number-pad"
+        returnKeyType="go"
+        style={{
+          width: 26, textAlign: 'center', paddingVertical: 0, paddingBottom: 1,
+          borderBottomWidth: 1.5, borderBottomColor: focused ? t.accent : t.lineStrong,
+          color: t.ink, fontFamily: FONTS.head, fontSize: 13.5, fontWeight: '700', fontVariant: ['tabular-nums'],
+        }}
+      />
+      <Text style={{ fontFamily: FONTS.head, fontSize: 12, color: t.faint, fontWeight: '500' }}>楼</Text>
+      <Pressable onPress={go} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, paddingLeft: 2 })}>
+        <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.accentInk }}>定位</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function ThreadScreen({ route }: NativeStackScreenProps<RootStackParamList, 'thread'>) {
   const paramThread: ThreadNavParam = route.params?.thread || {};
   const tid = (route.params?.tid || paramThread.tid || paramThread.id) as string;
@@ -76,12 +107,21 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   const [data, setData] = React.useState<ThreadData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [page, setPage] = React.useState(1);
+  const [totalPages, setTotalPages] = React.useState(1);
+  const [paging, setPaging] = React.useState(false);
+  const [flash, setFlash] = React.useState<number | null>(null);
+  const scRef = React.useRef<ScrollView>(null);
+  const floorY = React.useRef<Map<number, number>>(new Map());
+  const pending = React.useRef<number | null>(null);
+
   const load = React.useCallback(async () => {
     setError(null);
     try {
       const d = await getThread(tid, 1);
       setData(d);
+      setPage(1);
+      setTotalPages(d.totalPages);
       recordThread({ tid, title: d.thread.title || paramThread.title, author: d.thread.author });
     } catch (e) {
       setError(e.message);
@@ -90,31 +130,45 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   React.useEffect(() => { load(); }, [load]);
 
-  const loadMore = async () => {
-    if (!data || loadingMore || !data.hasMore) return;
-    setLoadingMore(true);
+  const fetchPage = async (n: number) => {
+    if (paging) return;
+    setPaging(true);
+    floorY.current.clear();
     try {
-      const next = await getThread(tid, data.page + 1);
-      setData((prev) => {
-        if (!prev) return next;
-        const floorMap = new Map(prev.floors.map((f) => [f.pid || String(f.floor), f]));
-        next.floors.forEach((f) => floorMap.set(f.pid || String(f.floor), f));
-        const imageMap = new Map(prev.images.map((img) => [img.src || img.cap, img]));
-        next.images.forEach((img) => imageMap.set(img.src || img.cap, img));
-        return {
-          ...prev,
-          floors: Array.from(floorMap.values()).sort((a, b) => a.floor - b.floor),
-          images: Array.from(imageMap.values()),
-          page: next.page,
-          hasMore: next.hasMore,
-        };
-      });
+      const d = await getThread(tid, n);
+      setData((prev) => (prev ? { ...prev, floors: d.floors, images: d.images, page: d.page, hasMore: d.hasMore, totalPages: d.totalPages } : d));
+      setPage(n);
+      setTotalPages(d.totalPages);
     } catch (e) {
       nav.toast(e.message);
     } finally {
-      setLoadingMore(false);
+      setPaging(false);
     }
   };
+  const goPage = (n: number) => { pending.current = null; if (n !== page) fetchPage(n); };
+
+  const scrollToFloor = (f: number, smooth: boolean) => {
+    const run = () => {
+      const y = floorY.current.get(f);
+      if (y != null) scRef.current?.scrollTo({ y: Math.max(0, y - 54), animated: smooth });
+    };
+    // 等新渲染的楼层完成布局后再滚动；翻页后布局可能延迟，instant 再补一次。
+    setTimeout(() => { run(); setFlash(f); }, 40);
+    if (!smooth) setTimeout(run, 220);
+    setTimeout(() => setFlash(null), 1900);
+  };
+  const locate = (f: number) => {
+    const total = (data?.thread.replies || 0) + 1;
+    f = Math.max(1, Math.min(total, (f | 0) || 1));
+    const tp = Math.ceil(f / ppp);
+    if (tp === page) scrollToFloor(f, true);
+    else { pending.current = f; fetchPage(tp); }
+  };
+
+  React.useEffect(() => {
+    if (pending.current != null) { const f = pending.current; pending.current = null; scrollToFloor(f, false); }
+    else { scRef.current?.scrollTo({ y: 0, animated: false }); }
+  }, [page]); // eslint-disable-line
 
   const openImg = (src: string | null) => {
     const imgs: ThreadImage[] = data?.images?.length ? data.images : [{ src, cap: '图片' }];
@@ -136,6 +190,10 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   const thread = data?.thread || paramThread;
   const floors = data?.floors || [];
+  const ppp = data?.ppp || 20;
+  const totalFloors = (data?.thread.replies || 0) + 1;
+  const showOP = !!floors[0]?.op;                 // 楼主仅第一页
+  const replyFloors = showOP ? floors.slice(1) : floors;
   // 文学区（小说/翻译）帖子一律提供阅读模式入口，只需楼主 uid 可做 authorid 过滤。
   const readingCandidate = !!data
     && LITERATURE_FIDS.has(String(data.thread.fid || board?.fid || ''))
@@ -155,14 +213,19 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
       {error ? <ErrorView message={error} onRetry={load} />
         : !data ? <Loader label="加载帖子…" />
         : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+          <ScrollView ref={scRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
             <View style={{ paddingTop: 2, paddingHorizontal: 22, paddingBottom: 18 }}>
-              <Kicker style={{ marginBottom: 14 }}>{board ? board.name : '帖子'}{thread.pinned ? '  ·  置顶' : ''}</Kicker>
+              <Kicker style={{ marginBottom: 14 }}>
+                {board ? board.name : '帖子'}{thread.pinned ? '  ·  置顶' : ''}{totalPages > 1 ? `  ·  第 ${page}/${totalPages} 页` : ''}
+              </Kicker>
               <Text style={{ fontFamily: FONTS.head, fontSize: 26, fontWeight: '700', color: t.ink, lineHeight: 34.8, letterSpacing: -0.2, marginBottom: 20 }}>{thread.title}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
                 <Avatar user={thread.author} size={38} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{thread.author?.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{thread.author?.name}</Text>
+                    <Text style={{ fontFamily: FONTS.head, fontSize: 11, fontWeight: '700', color: t.accentInk }}>楼主</Text>
+                  </View>
                   <Text style={{ fontFamily: FONTS.head, fontSize: 12, color: t.muted, fontWeight: '500', marginTop: 2 }}>
                     {thread.author?.group ? thread.author.group + ' · ' : ''}{thread.time}
                   </Text>
@@ -170,36 +233,46 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
               </View>
             </View>
             <Divider />
-            {/* OP body */}
-            {floors[0] ? (
-              <View style={{ paddingTop: 22, paddingHorizontal: 22, paddingBottom: 8 }}>
-                {floors[0].blocks.map((b, i) => <FloorBlock key={i} b={b} onImg={openImg} onLink={openLink} />)}
+            {/* OP body — 仅第一页 */}
+            {showOP ? (
+              <View
+                onLayout={(e: LayoutChangeEvent) => floorY.current.set(1, e.nativeEvent.layout.y)}
+                style={{ backgroundColor: flash === 1 ? t.accentSoft : 'transparent' }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 12, paddingHorizontal: 22 }}>
+                  <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.faint }}>1楼 · 楼主</Text>
+                </View>
+                <View style={{ paddingTop: 6, paddingHorizontal: 22, paddingBottom: 8 }}>
+                  {floors[0].blocks.map((b, i) => <FloorBlock key={i} b={b} onImg={openImg} onLink={openLink} />)}
+                </View>
               </View>
             ) : null}
             {/* replies */}
-            <Kicker style={{ paddingTop: 14, paddingHorizontal: 22 }}>{thread.replies} 条回复</Kicker>
+            <Kicker style={{ paddingTop: 16, paddingHorizontal: 22 }}>{thread.replies} 条回复</Kicker>
             <Divider style={{ marginTop: 14 }} />
-            {floors.slice(1).map((f, i) => (
-              <View key={f.pid || f.floor}>
-                <Floor f={f} onImg={openImg} onLink={openLink} onUnavailable={nav.notImplemented} />
-                {i < floors.length - 2 && <Divider />}
+            {replyFloors.length === 0 ? (
+              <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 13, color: t.muted, paddingVertical: 30 }}>
+                {totalFloors <= 1 ? '还没有回复，来抢沙发吧' : '本页暂无回复'}
+              </Text>
+            ) : replyFloors.map((f, i) => (
+              <View key={f.pid || f.floor} onLayout={(e: LayoutChangeEvent) => floorY.current.set(f.floor, e.nativeEvent.layout.y)}>
+                <View style={{ backgroundColor: flash === f.floor ? t.accentSoft : 'transparent' }}>
+                  <Floor f={f} onImg={openImg} onLink={openLink} onUnavailable={nav.notImplemented} />
+                </View>
+                {i < replyFloors.length - 1 && <Divider />}
               </View>
             ))}
-            {floors.length <= 1 && !data.hasMore ? (
-              <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 13, color: t.muted, paddingVertical: 28 }}>还没有回复，来抢沙发吧</Text>
-            ) : data.hasMore ? (
-              <Pressable
-                disabled={loadingMore}
-                onPress={loadMore}
-                style={{ alignSelf: 'center', minWidth: 150, height: 42, marginTop: 20, marginBottom: 18, borderRadius: 999, backgroundColor: t.accentSoft, alignItems: 'center', justifyContent: 'center' }}
-              >
-                {loadingMore
-                  ? <ActivityIndicator size="small" color={t.accentInk} />
-                  : <Text style={{ fontFamily: FONTS.head, fontSize: 13.5, fontWeight: '600', color: t.accentInk }}>加载更多回复</Text>}
-              </Pressable>
-            ) : (
-              <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 12, color: t.faint, paddingTop: 22, paddingBottom: 18 }}>—  到底啦  —</Text>
-            )}
+            {/* pager（含按楼层定位） */}
+            <View style={{ opacity: paging ? 0.5 : 1 }} pointerEvents={paging ? 'none' : 'auto'}>
+              <Pager
+                page={page}
+                totalPages={totalPages}
+                onJump={goPage}
+                cap={`共 ${totalFloors} 楼 · 每页 ${ppp} 楼`}
+                extra={totalFloors > ppp ? <FloorJump onLocate={locate} /> : null}
+              />
+            </View>
+            <View style={{ height: 8 }} />
           </ScrollView>
         )}
 

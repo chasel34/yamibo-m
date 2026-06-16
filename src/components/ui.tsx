@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, Image, StyleProp, ViewStyle, ImageStyle } from 'react-native';
+import { View, Text, Pressable, Image, TextInput, StyleProp, ViewStyle, ImageStyle } from 'react-native';
 import Svg, { Rect, Path, Circle, Defs, Pattern } from 'react-native-svg';
 import Icon from './Icon';
 import { useTheme, FONTS, Theme } from '../theme';
@@ -287,6 +287,74 @@ export function PinnedRow<T extends PinnedRowItem>({ item, onOpen }: { item: T; 
 export function Kicker({ children, style }: { children?: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   const { t } = useTheme();
   return <Text style={[{ fontFamily: FONTS.head, fontSize: 11.5, fontWeight: '700', letterSpacing: 1.6, color: t.muted, textTransform: 'uppercase' }, style as any]}>{children}</Text>;
+}
+
+// ===================== Pager (论坛式分页 · 安静排版风, ported from .pager) =====================
+export function Pager({ page, totalPages, onJump, cap, extra }: {
+  page: number; totalPages: number; onJump: (p: number) => void;
+  cap?: string; extra?: React.ReactNode;
+}) {
+  const { t } = useTheme();
+  const [val, setVal] = React.useState(String(page));
+  const [focused, setFocused] = React.useState(false);
+  React.useEffect(() => { setVal(String(page)); }, [page]);
+  const clamp = (p: number) => Math.max(1, Math.min(totalPages, p));
+  const go = (p: number) => { onJump(clamp((p | 0) || 1)); };
+  const commit = () => { const n = parseInt(val, 10); if (n) go(n); else setVal(String(page)); };
+  const atFirst = page <= 1;
+  const atLast = page >= totalPages;
+
+  // 单页：不显示翻页控件，仅保留底部说明
+  if (totalPages <= 1) {
+    if (!cap && !extra) return null;
+    return (
+      <View style={{ paddingTop: 18, paddingBottom: 6 }}>
+        {cap ? <Text style={[pgcapStyle(t), { paddingHorizontal: 22 }]}>{cap}</Text> : null}
+        {extra ? <View style={{ flexDirection: 'row', justifyContent: 'center', paddingHorizontal: 22, paddingTop: 5, paddingBottom: 4 }}>{extra}</View> : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ paddingTop: 8, paddingBottom: 2 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18, paddingTop: 20, paddingHorizontal: 22 }}>
+        <Pressable onPress={() => !atFirst && go(page - 1)} disabled={atFirst} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 6, opacity: atFirst ? 0.45 : pressed ? 0.55 : 1 })}>
+          <Icon name="back" size={15} color={atFirst ? t.faint : t.inkSoft} />
+          <Text style={{ fontFamily: FONTS.head, fontSize: 14, fontWeight: '600', color: atFirst ? t.faint : t.inkSoft, letterSpacing: 0.2 }}>上一页</Text>
+        </Pressable>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5 }}>
+          <Text style={pgcurLStyle(t)}>第</Text>
+          <TextInput
+            value={val}
+            onChangeText={(s) => setVal(s.replace(/[^0-9]/g, ''))}
+            onFocus={() => setFocused(true)}
+            onBlur={() => { setFocused(false); commit(); }}
+            onSubmitEditing={commit}
+            keyboardType="number-pad"
+            returnKeyType="go"
+            style={{
+              width: 30, textAlign: 'center', paddingVertical: 0, paddingBottom: 2,
+              borderBottomWidth: 1.5, borderBottomColor: focused ? t.accent : t.lineStrong,
+              color: t.ink, fontFamily: FONTS.head, fontSize: 17, fontWeight: '700', fontVariant: ['tabular-nums'],
+            }}
+          />
+          <Text style={pgcurLStyle(t)}>/ {totalPages} 页</Text>
+        </View>
+        <Pressable onPress={() => !atLast && go(page + 1)} disabled={atLast} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 6, opacity: atLast ? 0.45 : pressed ? 0.55 : 1 })}>
+          <Text style={{ fontFamily: FONTS.head, fontSize: 14, fontWeight: '600', color: atLast ? t.faint : t.inkSoft, letterSpacing: 0.2 }}>下一页</Text>
+          <Icon name="chevRight" size={15} color={atLast ? t.faint : t.inkSoft} />
+        </Pressable>
+      </View>
+      {cap ? <Text style={[pgcapStyle(t), { paddingHorizontal: 22, paddingTop: 11, paddingBottom: 4 }]}>{cap}</Text> : null}
+      {extra ? <View style={{ flexDirection: 'row', justifyContent: 'center', paddingHorizontal: 22, paddingTop: 5, paddingBottom: 4 }}>{extra}</View> : null}
+    </View>
+  );
+}
+function pgcapStyle(t: Theme): any {
+  return { textAlign: 'center', fontFamily: FONTS.head, fontSize: 12, color: t.faint, letterSpacing: 0.2 };
+}
+function pgcurLStyle(t: Theme): any {
+  return { fontFamily: FONTS.head, fontSize: 13, fontWeight: '500', color: t.muted };
 }
 
 export { GROUP_TONES };
