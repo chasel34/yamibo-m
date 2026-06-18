@@ -94,8 +94,10 @@ export interface ThemeContextValue {
   t: Theme;
   theme: ThemeName;
   setTheme: (name: ThemeName) => void;
+  uiFontLevel: number;                 // 0 小 / 1 中 / 2 大（全局界面字号）
+  setUiFontLevel: (level: number) => void;
 }
-export const ThemeContext = React.createContext<ThemeContextValue>({ t: light, theme: 'light', setTheme: () => {} });
+export const ThemeContext = React.createContext<ThemeContextValue>({ t: light, theme: 'light', setTheme: () => {}, uiFontLevel: 1, setUiFontLevel: () => {} });
 export const useTheme = () => React.useContext(ThemeContext);
 
 // ===== Shadow helpers (ported from --shadow-card / --shadow-pop) =====

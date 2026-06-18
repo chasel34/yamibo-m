@@ -17,17 +17,16 @@ function ListRow({ children, onPress }: { children?: React.ReactNode; onPress?: 
 }
 const InnerHr = () => <HLine style={{ marginLeft: 57, marginRight: 18 }} />;
 
-function FontSizePicker({ onUnavailable }: { onUnavailable: () => void }) {
-  const { t } = useTheme();
-  const selected = 1;
+function FontSizePicker() {
+  const { t, uiFontLevel, setUiFontLevel } = useTheme();
   return (
     <View style={{ flexDirection: 'row', gap: 6 }}>
       {['小', '中', '大'].map((l, i) => (
-        <Pressable key={i} onPress={onUnavailable} style={{
+        <Pressable key={i} onPress={() => setUiFontLevel(i)} style={{
           width: 34, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 8,
-          backgroundColor: selected === i ? t.accent : t.card2,
+          backgroundColor: uiFontLevel === i ? t.accent : t.card2,
         }}>
-          <Text style={{ fontFamily: FONTS.head, fontSize: 13, fontWeight: '600', color: selected === i ? t.onAccent : t.inkSoft }}>{l}</Text>
+          <Text style={{ fontFamily: FONTS.head, fontSize: 13, fontWeight: '600', color: uiFontLevel === i ? t.onAccent : t.inkSoft }}>{l}</Text>
         </Pressable>
       ))}
     </View>
@@ -53,21 +52,12 @@ export default function SettingsScreen() {
           <InnerHr />
           <ListRow>
             {lrIc('type')}{lrTitle('字号')}
-            <FontSizePicker onUnavailable={nav.notImplemented} />
+            <FontSizePicker />
           </ListRow>
         </Card>
 
         <Kicker style={{ paddingTop: 24, paddingHorizontal: 22, paddingBottom: 11 }}>阅读</Kicker>
         <Card>
-          <ListRow>
-            {lrIc('doc')}
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: FONTS.head, fontSize: 15.5, fontWeight: '500', color: t.ink }}>总是抓取全文</Text>
-              <Text style={{ fontFamily: FONTS.body, fontSize: 12, color: t.muted, marginTop: 2 }}>仅有摘要的来源将抓取网页全文</Text>
-            </View>
-            <Toggle on={false} onChange={nav.notImplemented} />
-          </ListRow>
-          <InnerHr />
           <ListRow onPress={nav.notImplemented}>
             {lrIc('trash')}{lrTitle('清除缓存')}
             <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted }}>42.6 MB</Text>

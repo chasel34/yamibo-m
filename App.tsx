@@ -7,6 +7,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import './src/uiFontScale'; // installs the global Text fontSize-scaling patch (must run before any render)
+import { setUiFontScale, uiFontScaleForLevel, UI_FONT_LEVEL_KEY } from './src/uiFontScale';
 import { ThemeContext, THEMES, useTheme } from './src/theme';
 import { ToastProvider, useToast, AuthContext } from './src/context';
 import { checkAuth, logout as apiLogout } from './src/api';
@@ -128,6 +130,7 @@ function Shell() {
 
 export default function App() {
   const [theme, setThemeState] = React.useState<ThemeName>('light');
+  const [uiFontLevel, setUiFontLevelState] = React.useState(1);
   const [booted, setBooted] = React.useState(false);
   const [ready, setReady] = React.useState(false);
 
@@ -136,6 +139,8 @@ export default function App() {
       try {
         const savedTheme = await AsyncStorage.getItem('yh_theme');
         if (savedTheme === 'light' || savedTheme === 'dark') setThemeState(savedTheme);
+        const savedFont = parseInt((await AsyncStorage.getItem(UI_FONT_LEVEL_KEY)) ?? '', 10);
+        if (savedFont >= 0 && savedFont <= 2) { setUiFontLevelState(savedFont); setUiFontScale(uiFontScaleForLevel(savedFont)); }
       } catch (e) {}
       // Verify against the real session (proxy/cookies restore login on web).
       try {
@@ -151,13 +156,19 @@ export default function App() {
     AsyncStorage.setItem('yh_theme', tname).catch(() => {});
   }, []);
 
+  const setUiFontLevel = React.useCallback((level: number) => {
+    setUiFontScale(uiFontScaleForLevel(level));   // live value read by the Text patch
+    setUiFontLevelState(level);                   // new themeValue → useTheme consumers re-render → Text re-scales
+    AsyncStorage.setItem(UI_FONT_LEVEL_KEY, String(level)).catch(() => {});
+  }, []);
+
   const auth = React.useMemo(() => ({
     booted,
     enter: () => setBooted(true),                 // after successful real login / guest
     logout: async () => { await apiLogout(); setBooted(false); },
   }), [booted]);
 
-  const themeValue = React.useMemo(() => ({ t: THEMES[theme], theme, setTheme }), [theme, setTheme]);
+  const themeValue = React.useMemo(() => ({ t: THEMES[theme], theme, setTheme, uiFontLevel, setUiFontLevel }), [theme, setTheme, uiFontLevel, setUiFontLevel]);
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: THEMES[theme].bg }} />;
 
