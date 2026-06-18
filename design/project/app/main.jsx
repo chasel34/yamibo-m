@@ -69,7 +69,7 @@ function App(){
     setTimeout(()=> setStack(s=> s.slice(0,-1)), 270);
   };
   const switchTab = (tab)=>{ setStack([]); setActiveTab(tab); };
-  const openViewer = (images, index)=> setViewer({images, index:index||0, state:"enter"});
+  const openViewer = (images, index, title)=> setViewer({images, index:index||0, title, state:"enter"});
   const closeViewer = ()=>{
     setViewer(v=> v? {...v, state:"exit"}:v);
     setTimeout(()=> setViewer(null), 210);
@@ -109,7 +109,7 @@ function App(){
         {/* image viewer */}
         {viewer && (
           <div style={{position:"absolute", inset:0, zIndex:40, opacity: viewer.state==="exit"?0:1, transition:"opacity .2s ease"}}>
-            <window.ImageViewer images={viewer.images} index={viewer.index}/>
+            <window.ImageViewer images={viewer.images} index={viewer.index} title={viewer.title}/>
           </div>
         )}
 

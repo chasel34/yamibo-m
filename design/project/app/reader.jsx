@@ -276,7 +276,7 @@ const Reader = ({bookId, fresh}) => {
   const contentW = dim.w ? dim.w - PX*2 : 320;
   const renderBlock = (b,i)=>(
     <RBlock key={i} b={b} T={T} fpx={fpx}
-      onImg={(cap)=>{ const idx=Math.max(0,chImgs.findIndex(x=>x.cap===cap)); nav.openViewer(chImgs.length?chImgs:[{cap}], idx); }}
+      onImg={(cap)=>{ const idx=Math.max(0,chImgs.findIndex(x=>x.cap===cap)); nav.openViewer(chImgs.length?chImgs:[{cap}], idx, book.title); }}
       onLink={(v)=>nav.toast("链接：将跳转网页 · "+v)}
       onComments={()=>setPanel("comments")}/>
   );

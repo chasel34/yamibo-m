@@ -113,7 +113,7 @@ const ThreadScreen = ({thread, board}) => {
 
   // 图片查看器：仅本页可见楼层
   const allImgs = pageFloors.flatMap(f=> f.blocks.filter(b=>b.t==="img").map(b=>({cap:b.cap})));
-  const openImg = (cap)=>{ const idx = Math.max(0, allImgs.findIndex(i=>i.cap===cap)); nav.openViewer(allImgs.length?allImgs:[{cap}], idx); };
+  const openImg = (cap)=>{ const idx = Math.max(0, allImgs.findIndex(i=>i.cap===cap)); nav.openViewer(allImgs.length?allImgs:[{cap}], idx, thread.title); };
 
   const scrollToFloor = (f, smooth)=>{
     const run = (behavior)=>{
@@ -225,93 +225,6 @@ const ThreadScreen = ({thread, board}) => {
   );
 };
 
-// ===================== Image viewer =====================
-const ImageViewer = ({images, index}) => {
-  const nav = window.useNav();
-  const [i, setI] = React.useState(index||0);
-  const [dx, setDx] = React.useState(0);      // live drag offset in px
-  const [dragging, setDragging] = React.useState(false);
-  const startX = React.useRef(0);
-  const startY = React.useRef(0);
-  const trackW = React.useRef(0);
-  const axisLock = React.useRef(null);        // 'x' | 'y' | null
-  const n = images.length;
-
-  const onStart = (e)=>{
-    const t = e.touches ? e.touches[0] : e;
-    startX.current = t.clientX; startY.current = t.clientY;
-    trackW.current = e.currentTarget.offsetWidth;
-    axisLock.current = null;
-    setDragging(true);
-  };
-  const onMove = (e)=>{
-    if(!dragging) return;
-    const t = e.touches ? e.touches[0] : e;
-    const mx = t.clientX - startX.current;
-    const my = t.clientY - startY.current;
-    if(axisLock.current===null && (Math.abs(mx)>6 || Math.abs(my)>6)){
-      axisLock.current = Math.abs(mx) > Math.abs(my) ? "x" : "y";
-    }
-    if(axisLock.current!=="x") return;
-    if(e.cancelable) e.preventDefault();
-    let d = mx;
-    // rubber-band at the ends
-    if((i===0 && d>0) || (i===n-1 && d<0)) d = d*0.32;
-    setDx(d);
-  };
-  const onEnd = ()=>{
-    if(!dragging) return;
-    const w = trackW.current || 1;
-    const threshold = Math.min(90, w*0.22);
-    let ni = i;
-    if(dx <= -threshold && i < n-1) ni = i+1;
-    else if(dx >= threshold && i > 0) ni = i-1;
-    setI(ni);
-    setDx(0);
-    setDragging(false);
-    axisLock.current = null;
-  };
-
-  return (
-    <div style={{position:"absolute", inset:0, background:"#0d0a09", display:"flex", flexDirection:"column", zIndex:1}}>
-      <div className="statusbar" style={{color:"#fff"}}>
-        <span className="sb-time">9:08</span>
-        <span className="sb-right" style={{opacity:.9}}>
-          <svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0.5" width="3" height="11.5" rx="1" opacity=".4"/></svg>
-        </span>
-      </div>
-      <div className="row" style={{padding:"0 18px 8px", justifyContent:"space-between"}}>
-        <div className="navback" style={{background:"rgba(255,255,255,.14)", color:"#fff"}} onClick={nav.closeViewer}><Ic name="close" size={20}/></div>
-        <span style={{color:"#fff", fontFamily:"var(--font-head)", fontWeight:600, fontSize:15}}>{i+1} / {n}</span>
-        <div className="navback" style={{background:"rgba(255,255,255,.14)", color:"#fff"}} onClick={()=>nav.toast("已保存到相册")}><Ic name="download" size={20}/></div>
-      </div>
-      <div
-        style={{flex:1, display:"flex", alignItems:"center", overflow:"hidden", position:"relative", touchAction:"pan-y"}}
-        onTouchStart={onStart} onTouchMove={onMove} onTouchEnd={onEnd}
-        onMouseDown={onStart} onMouseMove={onMove} onMouseUp={onEnd} onMouseLeave={onEnd}
-      >
-        <div style={{
-          display:"flex", width:"100%", height:"100%",
-          transform:`translateX(calc(${-i*100}% + ${dx}px))`,
-          transition: dragging ? "none" : "transform .34s cubic-bezier(.32,.72,.34,1)"
-        }}>
-          {images.map((img,k)=>(
-            <div key={k} style={{flex:"0 0 100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", padding:"0 16px"}}>
-              <div className="stripe" style={{width:"100%", height:"100%", maxHeight:520, borderRadius:12, pointerEvents:"none"}}>
-                <span className="stripe-cap">{img.cap||"图片占位"}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div style={{display:"flex", gap:6, justifyContent:"center", padding:"14px 0 8px"}}>
-        {images.map((_,k)=> <div key={k} onClick={()=>setI(k)} style={{width:k===i?20:7, height:7, borderRadius:4, background:k===i?"#fff":"rgba(255,255,255,.35)", transition:".25s", cursor:"pointer"}}></div>)}
-      </div>
-      <div style={{textAlign:"center", color:"rgba(255,255,255,.6)", fontFamily:"var(--font-head)", fontSize:12, padding:"4px 0 22px"}}>左右滑动切换</div>
-    </div>
-  );
-};
-
 // ===================== Profile (self & other) — minimal =====================
 const StatCell = ({n, label, onClick}) => (
   <div style={{flex:1, textAlign:"center", cursor:onClick?"pointer":"default"}} onClick={onClick}>
@@ -393,4 +306,4 @@ const ActionRow = ({icon, label, onClick, danger}) => (
   </div>
 );
 
-Object.assign(window, { ThreadScreen, ImageViewer, ProfileScreen, InfoRow, ActionRow, ReaderEntry });
+Object.assign(window, { ThreadScreen, ProfileScreen, InfoRow, ActionRow, ReaderEntry });
