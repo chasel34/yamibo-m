@@ -37,7 +37,8 @@ export async function getReaderSettings(): Promise<{ theme: ReaderThemeKey; font
     const [theme, font, hinted] = await Promise.all([
       AsyncStorage.getItem(THEME_KEY), AsyncStorage.getItem(FONT_KEY), AsyncStorage.getItem(HINT_KEY),
     ]);
-    const fontIdx = Math.max(0, Math.min(READER_FONTS.length - 1, parseInt(font || '1', 10) || 1));
+    const parsed = parseInt(font ?? '', 10);
+    const fontIdx = Number.isFinite(parsed) ? Math.max(0, Math.min(READER_FONTS.length - 1, parsed)) : 1;
     return {
       theme: theme && theme in READER_THEMES ? theme as ReaderThemeKey : 'paper',
       fontIdx,
