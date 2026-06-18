@@ -173,7 +173,7 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
   const openImg = (src: string | null) => {
     const imgs: ThreadImage[] = data?.images?.length ? data.images : [{ src, cap: '图片' }];
     const idx = Math.max(0, imgs.findIndex((i) => i.src === src));
-    nav.openViewer(imgs, idx);
+    nav.openViewer(imgs, idx, thread.title);
   };
   const openLink = async (href: string) => {
     const threadMatch = href.match(/[?&](?:tid|ptid)=(\d+)/);

@@ -21,7 +21,7 @@ export function useNav() {
     },
     pop: () => navigation.goBack(),
     switchTab: (tab: string) => navigation.navigate('tabs', { screen: tab }),
-    openViewer: (images: ThreadImage[], index?: number) => navigation.navigate('viewer', { images, index: index || 0 }),
+    openViewer: (images: ThreadImage[], index?: number, title?: string) => navigation.navigate('viewer', { images, index: index || 0, title }),
     closeViewer: () => navigation.goBack(),
     toast,
     notImplemented: () => toast(NOT_IMPLEMENTED_MESSAGE),

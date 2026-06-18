@@ -19,6 +19,7 @@ const PROGRESS_PREFIX = 'yh_rd_pos_';
 const THEME_KEY = 'yh_rd_theme';
 const FONT_KEY = 'yh_rd_font';
 const HINT_KEY = 'yh_rd_hint';
+const VIEWER_HINT_KEY = 'yh_viewer_hint';
 
 export async function getReadingProgress(tid: string): Promise<ReadingProgress | null> {
   try {
@@ -57,6 +58,14 @@ export function saveReaderFont(fontIdx: number) {
 
 export function markReaderHinted() {
   AsyncStorage.setItem(HINT_KEY, '1').catch(() => {});
+}
+
+export async function getViewerHinted(): Promise<boolean> {
+  try { return (await AsyncStorage.getItem(VIEWER_HINT_KEY)) === '1'; } catch (e) { return false; }
+}
+
+export function markViewerHinted() {
+  AsyncStorage.setItem(VIEWER_HINT_KEY, '1').catch(() => {});
 }
 
 const CHAPTER_RE = /^(?:第\s*\d+\s*[话話章节節回]|episode\s*\d+|番外|序章|终章|終章|后日谈|後日談)/i;

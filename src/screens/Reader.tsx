@@ -188,7 +188,7 @@ export default function ReaderScreen({ route }: NativeStackScreenProps<RootStack
     } else if (msg.type === 'image') {
       const images = (chapter?.blocks || []).filter((block) => block.t === 'img').map((block: any) => ({ src: block.src, cap: block.cap }));
       const index = Math.max(0, images.findIndex((image) => image.src === msg.src));
-      nav.openViewer(images.length ? images : [{ src: msg.src, cap: '图片' }], index);
+      nav.openViewer(images.length ? images : [{ src: msg.src, cap: '图片' }], index, book?.title);
     } else if (msg.type === 'link') {
       const href = String(msg.href || '');
       if (!/^https?:\/\//i.test(href)) return;

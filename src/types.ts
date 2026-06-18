@@ -284,5 +284,5 @@ export type RootStackParamList = {
   collections: undefined;
   history: undefined;
   about: undefined;
-  viewer: { images?: ThreadImage[]; index?: number } | undefined;
+  viewer: { images?: ThreadImage[]; index?: number; title?: string } | undefined;
 };
