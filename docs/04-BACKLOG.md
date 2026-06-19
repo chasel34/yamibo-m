@@ -27,7 +27,7 @@
 | 风控适配 | `acw_tc`/`cdn_sec_tc`(ESA) 风控、频率限制的退避与重试（目前仅基础错误提示） | ⬜ 待完善 |
 | 富文本增强 | 楼层 `message` 的隐藏内容/折叠码/附件下载、相对路径补全的边界场景 | ⬜ 部分完成 |
 | 字段容错层 | API 非官方契约，进一步做缺字段/类型容错与版本探测 | ⬜ 待加固 |
-| 原生 Android 冷启动登录态 | 当前原生依赖系统 Cookie；冷启动恢复需接 `@react-native-cookies` 持久化 `auth`/`saltkey` | ⬜ 待开发 |
+| 原生 Android 冷启动登录态 | 原生端接入 `@preeternal/react-native-cookie-manager` + `expo-secure-store`，持久化并冷启动恢复 `auth`/`saltkey` | ✅ 已完成 |
 
 ## ⬜ P1 · 写操作（v2 主线）
 

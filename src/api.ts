@@ -3,6 +3,7 @@
 // forum directly and lets the OS manage cookies.
 import { Platform } from 'react-native';
 import { avatarUrl, stripHtml, excerptText, groupTitleText, timeFromUnix, parseMessage, HOST } from './util';
+import { clearSessionCookies, hydrateSessionCookies, persistSessionCookies } from './sessionCookies';
 import type {
   Me, Notice, ForumIndexData, BoardData, ThreadData, ThreadImage,
   UserProfile, CollectionItem, ListResult, Reminder, PMItem, ThreadType, BoardSummary, ForumGroup, BoardSub, SortMode, PinnedItem,
@@ -35,6 +36,7 @@ interface RequestOpts {
   body?: string | null;
 }
 async function request(module: string, params: Record<string, any> = {}, { method = 'GET', body = null }: RequestOpts = {}): Promise<any> {
+  try { await hydrateSessionCookies(); } catch (e) {}
   const qs = new URLSearchParams({ version: '4', module, ...params }).toString();
   const opts: RequestInit = { method, headers: { Accept: 'application/json' } };
   if (Platform.OS === 'web') opts.credentials = 'omit'; // proxy owns the jar
@@ -52,6 +54,7 @@ async function request(module: string, params: Record<string, any> = {}, { metho
   let json: any;
   try { json = JSON.parse(text); } catch (e) { throw new Error('服务器返回了非预期内容（可能触发风控）'); }
   ingest(json.Variables);
+  try { await persistSessionCookies(json.Variables); } catch (e) {}
   return json;
 }
 
@@ -74,6 +77,7 @@ export async function logout(): Promise<void> {
     await request('logout', { formhash });
   } catch (e) { /* ignore */ }
   if (Platform.OS === 'web') { try { await fetch(`${PROXY}/__reset`); } catch (e) {} }
+  else { try { await clearSessionCookies(); } catch (e) {} }
   me = { uid: '0', username: '', avatar: null };
 }
 
