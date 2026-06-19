@@ -219,18 +219,20 @@ export async function getReadingStream(tid: string, authorid: string, page = 1):
   };
 }
 
-async function resolvePostPage(tid: string, pid: string): Promise<number> {
+export async function resolvePostPage(tid: string, pid: string): Promise<number> {
   const target = `${HOST}/forum.php?mod=redirect&goto=findpost&ptid=${encodeURIComponent(tid)}&pid=${encodeURIComponent(pid)}`;
   if (Platform.OS === 'web') {
     const res = await fetch(`${PROXY}/__resolve?url=${encodeURIComponent(target)}`);
     if (!res.ok) throw new Error('无法定位章节评论');
     const data = await res.json();
     const match = String(data.url || '').match(/[?&]page=(\d+)/);
-    return match ? parseInt(match[1], 10) : 1;
+    if (!match) throw new Error('无法定位章节评论');
+    return parseInt(match[1], 10);
   }
   const res = await fetch(target, { redirect: 'follow' });
   const match = String(res.url || '').match(/[?&]page=(\d+)/);
-  return match ? parseInt(match[1], 10) : 1;
+  if (!match) throw new Error('无法定位章节评论');
+  return parseInt(match[1], 10);
 }
 
 export async function getChapterComments(tid: string, pid: string, authorid: string, pageHint?: number): Promise<ReadingComment[]> {

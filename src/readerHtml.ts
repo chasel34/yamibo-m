@@ -1,7 +1,7 @@
 import { displayImageUrl } from './api';
-import type { Block } from './types';
+import type { Block, ReadingChapterType } from './types';
 import type { ReaderThemeKey } from './reading';
-import { READER_THEMES } from './reading';
+import { isWeakChapter, READER_THEMES } from './reading';
 
 function esc(value?: string | null): string {
   return String(value || '')
@@ -45,6 +45,7 @@ interface ReaderHtmlOptions {
   title: string;
   chapterNo: number;
   chapterTitle: string;
+  chapterType?: ReadingChapterType;
   blocks: Block[];
   theme: ReaderThemeKey;
   fontSize: number;
@@ -52,10 +53,12 @@ interface ReaderHtmlOptions {
   comments: number | null;
   isLast: boolean;
   complete: boolean;
+  floorLabel?: string;
 }
 
 export function createReaderHtml(options: ReaderHtmlOptions): string {
   const T = READER_THEMES[options.theme];
+  const weak = isWeakChapter(options.chapterType);
   const body = options.blocks.map((block) => blockHtml(block, options.fontSize)).join('');
   const commentText = options.comments == null ? '点按加载，不打断阅读' : `${options.comments} 条 · 点按展开，不打断阅读`;
   const end = options.isLast ? `
@@ -76,9 +79,10 @@ body{font-family:"Noto Serif SC","Songti SC",Georgia,serif}
 #flow>*{break-inside:avoid;-webkit-column-break-inside:avoid}
 #flow p{break-inside:auto;-webkit-column-break-inside:auto;font-size:${options.fontSize}px;line-height:1.95;margin:0 0 .95em;text-indent:2em;text-align:justify;letter-spacing:.01em}
 .chapter{text-align:center;padding:34px 0 30px}
-.chapter .no{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:12px;font-weight:700;letter-spacing:3px;color:${T.accent}}
+.chapter .no{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:12px;font-weight:700;letter-spacing:3px;color:${options.chapterType === 'chapter' ? T.accent : T.soft}}
 .chapter h1{font-size:${options.fontSize + 3}px;font-weight:600;line-height:1.4;margin:12px 6px 0}
-.chapter i{display:block;width:30px;height:2px;background:${T.accent};opacity:.5;margin:20px auto 0}
+.chapter.note h1,.chapter.toc h1{font-size:${options.fontSize - 1}px;color:${T.soft}}
+.chapter i{display:block;width:30px;height:2px;background:${options.chapterType === 'chapter' ? T.accent : T.soft};opacity:.5;margin:20px auto 0}
 aside{border-left:2px solid ${T.accent};padding:4px 0 4px 14px;margin:6px 0 1em;color:${T.soft};font-size:${options.fontSize - 2}px;line-height:1.75}
 aside strong{display:block;color:${T.accent};font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:${options.fontSize - 5}px;margin-bottom:5px}
 a{color:${T.accent};text-underline-offset:3px}
@@ -87,6 +91,7 @@ a{color:${T.accent};text-underline-offset:3px}
 .placeholder{height:200px;color:${T.soft};background:repeating-linear-gradient(135deg,${T.line} 0 9px,transparent 9px 18px),${T.chrome}}
 .placeholder span{background:${T.bg};padding:4px 9px;border-radius:6px}
 .finis{text-align:center;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:${options.fontSize - 4}px;color:${T.soft};letter-spacing:2px;padding:22px 0 18px}
+.floorlink{display:block;width:100%;border:0;background:transparent;color:${T.soft};font:500 ${options.fontSize - 6}px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;text-align:center;padding:2px 0 18px}
 .comments{width:100%;display:flex;align-items:center;gap:12px;padding:15px 16px;border:1px solid ${T.line};border-radius:14px;background:${T.chrome};color:${T.ink};text-align:left;margin:4px 0 16px}
 .comments .bubble{color:${T.accent};font-size:21px}.comments b{display:block;font:600 ${options.fontSize - 5}px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
 .comments small{display:block;color:${T.soft};font:400 ${options.fontSize - 7}px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin-top:3px}
@@ -97,9 +102,10 @@ a{color:${T.accent};text-underline-offset:3px}
 .bookend p{font-size:${options.fontSize - 4}px;color:${T.soft};text-indent:0;text-align:center;margin-top:8px}
 </style></head>
 <body><div id="pager"><main id="flow">
-  <header class="chapter"><div class="no">第 ${options.chapterNo} 话</div><h1>${esc(options.chapterTitle)}</h1><i></i></header>
+  <header class="chapter ${esc(options.chapterType || 'chapter')}"><div class="no">${weak ? '说明' : options.chapterType === 'section' ? '无标题正文段' : `第 ${options.chapterNo} 话`}</div><h1>${esc(options.chapterTitle)}</h1><i></i></header>
   ${body}
-  <div class="finis">· 本话完 ·</div>
+  <div class="finis">${weak ? '· 楼主说明结束 ·' : options.chapterType === 'section' ? '· 本段完 ·' : '· 本话完 ·'}</div>
+  <button class="floorlink" id="floorlink">↗ 对照原楼层${options.floorLabel ? ` · ${esc(options.floorLabel)}` : ''}</button>
   <button class="comments" id="comments"><span class="bubble">↩</span><span><b>本章评论</b><small>${esc(commentText)}</small></span><em>›</em></button>
   ${end}
 </main></div>
@@ -153,6 +159,7 @@ function endDrag(e){
 pager.addEventListener('pointerup',endDrag);
 pager.addEventListener('pointercancel',()=>{if(dragging){dragging=false;render(true)}});
 document.getElementById('comments').addEventListener('click',()=>send({type:'comments'}));
+document.getElementById('floorlink').addEventListener('click',()=>send({type:'floor'}));
 document.querySelectorAll('[data-image]').forEach(el=>el.addEventListener('click',()=>send({type:'image',src:el.dataset.image})));
 document.querySelectorAll('a[data-link]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();send({type:'link',href:el.href})}));
 addEventListener('resize',measure);addEventListener('load',()=>setTimeout(measure,30));setTimeout(measure,100);

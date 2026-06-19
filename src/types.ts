@@ -146,16 +146,71 @@ export interface ReadingChapter {
   pid: string;
   no: number;
   title: string;
+  type?: ReadingChapterType;
+  confidence?: ReadingConfidence;
+  sourcePage?: number;
+  pageOffset?: number;
+  originalPage?: number;
   pos?: number; // unfiltered floor position of the chapter's楼主楼层（用于定位章末评论页）
   blocks?: Block[];
+}
+export type ReadingIndexStatus = 'complete' | 'toc-ready';
+export type ReadingChapterType = 'chapter' | 'section' | 'note' | 'toc';
+export type ReadingConfidence = 'high' | 'medium' | 'low';
+export interface ReadingChapterIndex {
+  id: string;
+  pid: string;
+  no: number;
+  title: string;
+  type: ReadingChapterType;
+  confidence: ReadingConfidence;
+  pos?: number;
+  sourcePage?: number;
+  pageOffset?: number;
+  originalPage?: number;
+}
+export interface ReadingDiagnostics {
+  opPostCount: number;
+  chapterCount: number;
+  linkedTocCount: number;
+  plainTocCount: number;
+  titleDetectedCount: number;
+  fallbackChapterCount: number;
+  droppedPostCount: number;
+  declaredLatestNo?: number;
+  confidence: ReadingConfidence;
+  warnings: string[];
+}
+export interface ReadingIndex {
+  version: 1;
+  tid: string;
+  fid: string;
+  authorid: string;
+  title: string;
+  author: NavAuthor;
+  status: ReadingIndexStatus;
+  chapters: ReadingChapterIndex[];
+  diagnostics: ReadingDiagnostics;
+  source: {
+    totalPages: number;
+    scannedPages: number;
+    builtAt: number;
+    firstPageHash?: string;
+    tocHash?: string;
+    lastPid?: string;
+  };
 }
 export interface ReadingBook {
   tid: string;
   fid?: string;
+  authorid?: string;
   title: string;
   author: NavAuthor;
   shape: '短篇' | '中篇连载' | '长篇连载';
   statusText: '完结' | '连载中';
+  status?: ReadingIndexStatus;
+  diagnostics?: ReadingDiagnostics;
+  source?: ReadingIndex['source'];
   chapters: ReadingChapter[];
   ppp: number;
   totalPages: number;
@@ -171,6 +226,7 @@ export interface ReadingProgress {
   page: number;
   pct: number;
   chapterTitle: string;
+  pid?: string;
   ts: number;
 }
 
@@ -277,7 +333,7 @@ export type RootStackParamList = {
   login: undefined;
   tabs: undefined;
   board: { board?: BoardNavParam; fid?: string } | undefined;
-  thread: { thread?: ThreadNavParam; board?: BoardNavParam; tid?: string } | undefined;
+  thread: { thread?: ThreadNavParam; board?: BoardNavParam; tid?: string; targetPid?: string; targetPage?: number } | undefined;
   reader: { tid: string; authorid: string; fresh?: boolean };
   profile: { uid?: string; self?: boolean } | undefined;
   settings: undefined;

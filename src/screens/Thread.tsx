@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, ScrollView, TextInput, Linking, LayoutChangeEvent } from 'react-native';
+import { StackActions } from '@react-navigation/native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
 import { NavHeader, NavBack, Avatar, Divider, Kicker, Pager } from '../components/ui';
@@ -7,7 +8,7 @@ import RemoteImage from '../components/RemoteImage';
 import { Loader, ErrorView } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
-import { getThread } from '../api';
+import { getThread, resolvePostPage } from '../api';
 import { recordThread } from '../history';
 import { LITERATURE_FIDS } from '../reading';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -98,9 +99,15 @@ function FloorJump({ onLocate }: { onLocate: (f: number) => void }) {
   );
 }
 
-export default function ThreadScreen({ route }: NativeStackScreenProps<RootStackParamList, 'thread'>) {
+function routeTid(route: any): string {
+  return String(route?.params?.tid || route?.params?.thread?.tid || route?.params?.thread?.id || '');
+}
+
+export default function ThreadScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'thread'>) {
   const paramThread: ThreadNavParam = route.params?.thread || {};
-  const tid = (route.params?.tid || paramThread.tid || paramThread.id) as string;
+  const tid = routeTid(route);
+  const targetPid = route.params?.targetPid;
+  const targetPage = route.params?.targetPage;
   const board = route.params?.board;
   const nav = useNav();
   const { t } = useTheme();
@@ -114,19 +121,57 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
   const scRef = React.useRef<ScrollView>(null);
   const floorY = React.useRef<Map<number, number>>(new Map());
   const pending = React.useRef<number | null>(null);
+  const targetHandled = React.useRef(false);
+  const targetLoadPage = React.useRef<number | null>(null);
+
+  const goBack = React.useCallback(() => {
+    const state = typeof navigation.getState === 'function' ? navigation.getState() : null;
+    const routes = state?.routes || [];
+    const index = typeof state?.index === 'number' ? state.index : routes.length - 1;
+    let popCount = 1;
+    for (let i = index - 1; i >= 0; i -= 1) {
+      const previous = routes[i];
+      if (previous?.name === 'reader') {
+        const beforeReader = routes[i - 1];
+        if (beforeReader?.name === 'thread' && routeTid(beforeReader) === tid) {
+          popCount += 2;
+          i -= 1;
+          continue;
+        }
+        break;
+      }
+      if (previous?.name === 'thread' && routeTid(previous) === tid) {
+        popCount += 1;
+        continue;
+      }
+      break;
+    }
+    if (index - popCount >= 0) {
+      navigation.dispatch(StackActions.pop(popCount));
+    } else {
+      nav.switchTab('forum');
+    }
+  }, [nav, navigation, tid]);
 
   const load = React.useCallback(async () => {
     setError(null);
     try {
-      const d = await getThread(tid, 1);
+      const firstPage = targetPage || (targetPid ? await resolvePostPage(tid, targetPid) : 1);
+      if (targetPid) {
+        targetLoadPage.current = firstPage;
+        targetHandled.current = false;
+      } else {
+        targetLoadPage.current = null;
+      }
+      const d = await getThread(tid, firstPage);
       setData(d);
-      setPage(1);
+      setPage(firstPage);
       setTotalPages(d.totalPages);
       recordThread({ tid, title: d.thread.title || paramThread.title, author: d.thread.author });
     } catch (e) {
       setError(e.message);
     }
-  }, [tid]); // eslint-disable-line
+  }, [tid, targetPid, targetPage]); // eslint-disable-line
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -170,6 +215,19 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
     else { scRef.current?.scrollTo({ y: 0, animated: false }); }
   }, [page]); // eslint-disable-line
 
+  React.useEffect(() => {
+    if (!targetPid || !data || targetHandled.current) return;
+    if (targetLoadPage.current && page !== targetLoadPage.current) return;
+    const floor = data.floors.find((item) => item.pid === targetPid);
+    if (floor) {
+      targetHandled.current = true;
+      scrollToFloor(floor.floor, false);
+    } else if (!paging) {
+      targetHandled.current = true;
+      nav.toast('无法定位楼层，已打开帖子');
+    }
+  }, [data, nav, paging, targetPid]); // eslint-disable-line
+
   const openImg = (src: string | null) => {
     const imgs: ThreadImage[] = data?.images?.length ? data.images : [{ src, cap: '图片' }];
     const idx = Math.max(0, imgs.findIndex((i) => i.src === src));
@@ -205,7 +263,7 @@ export default function ThreadScreen({ route }: NativeStackScreenProps<RootStack
 
   return (
     <Screen>
-      <NavHeader title="" onBack={nav.pop}
+      <NavHeader title="" onBack={goBack}
         right={readingCandidate
           ? <Pressable onPress={() => openReader()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}><Icon name="book" size={18} color="#fff" /></Pressable>
           : <NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>} />
