@@ -24,7 +24,7 @@
 | 项 | 说明 | 状态 |
 |---|---|---|
 | 登录验证码降级 | 多次失败触发 `seccode` 时降级到 WebView 登录并回收 Cookie | ⬜ 待开发 |
-| 风控适配 | `acw_tc`/`cdn_sec_tc`(ESA) 风控、频率限制的退避与重试（目前仅基础错误提示） | ⬜ 待完善 |
+| 风控适配 | `acw_tc`/`cdn_sec_tc`(ESA) 风控识别、频率限制提示与只读 GET 短退避重试 | ✅ 已完成 |
 | 富文本增强 | 楼层 `message` 的隐藏内容/折叠码/附件下载、相对路径补全的边界场景 | ⬜ 部分完成 |
 | 字段容错层 | API 非官方契约，进一步做缺字段/类型容错与版本探测 | ⬜ 待加固 |
 | 原生 Android 冷启动登录态 | 原生端接入 `@preeternal/react-native-cookie-manager` + `expo-secure-store`，持久化并冷启动恢复 `auth`/`saltkey` | ✅ 已完成 |

@@ -35,7 +35,104 @@ interface RequestOpts {
   method?: 'GET' | 'POST';
   body?: string | null;
 }
-async function request(module: string, params: Record<string, any> = {}, { method = 'GET', body = null }: RequestOpts = {}): Promise<any> {
+
+export type ApiErrorCode =
+  | 'proxy_unavailable'
+  | 'network'
+  | 'http'
+  | 'non_json'
+  | 'risk_control'
+  | 'rate_limited'
+  | 'auth_expired'
+  | 'business'
+  | 'unknown';
+
+export class ApiError extends Error {
+  code: ApiErrorCode;
+  module: string;
+  status?: number;
+  messageval?: string;
+  snippet?: string;
+
+  constructor(code: ApiErrorCode, message: string, details: { module: string; status?: number; messageval?: string; snippet?: string }) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.module = details.module;
+    this.status = details.status;
+    this.messageval = details.messageval;
+    this.snippet = details.snippet;
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function snippet(text?: string | null): string {
+  return stripHtml(String(text || '')).replace(/\s+/g, ' ').trim().slice(0, 220);
+}
+
+function looksRateLimited(text: string): boolean {
+  return /429|too many|rate.?limit|frequency|访问过于频繁|请求过于频繁|操作太快|稍后再试/i.test(text);
+}
+
+function looksRiskControl(text: string): boolean {
+  return /acw_tc|cdn_sec_tc|ESA|Access Denied|captcha|seccode|安全验证|访问验证|人机验证|防火墙|WAF|blocked|拦截/i.test(text);
+}
+
+function messageText(message?: any): string {
+  return String(message?.messagestr || message?.messageval || '');
+}
+
+function messageCode(message?: any): string {
+  return String(message?.messageval || '');
+}
+
+function businessMessage(val: string, text: string): string {
+  const raw = `${val} ${text}`;
+  if (/space_does_not_exist/i.test(raw)) return '用户不存在或资料不可见';
+  if (/thread_nonexistence/i.test(raw)) return '帖子不存在或已被删除';
+  if (/forum_nonexistence/i.test(raw)) return '板块不存在或不可访问';
+  if (/undefined_action|not_found/i.test(raw)) return '请求的内容不存在';
+
+  const clean = stripHtml(text);
+  if (clean && !/^mobile:[a-z0-9_./-]+$/i.test(clean)) return clean;
+  return '请求失败，请稍后再试';
+}
+
+function classifyMessage(module: string, message?: any): ApiError | null {
+  const val = messageCode(message);
+  if (!val || val === 'login_succeed' || val === 'logout_succeed') return null;
+
+  const text = messageText(message);
+  const raw = `${val} ${text}`;
+  if (looksRateLimited(raw) || /login_strike|attempt/i.test(raw)) {
+    return new ApiError('rate_limited', '访问太频繁了，请稍后再试', { module, messageval: val, snippet: snippet(text) });
+  }
+  if (looksRiskControl(raw) || /seccode|secqaa/i.test(raw)) {
+    return new ApiError('risk_control', '站点要求安全验证，请稍后重试或到网页端完成验证', { module, messageval: val, snippet: snippet(text) });
+  }
+  if (/login_before_enter_home|not_logged|notlogin|login_required|viewperm_login_nopermission|no_privilege|nopermission|未登录|请先登录|没有权限/i.test(raw)) {
+    return new ApiError('auth_expired', '登录状态已失效或没有访问权限，请重新登录后再试', { module, messageval: val, snippet: snippet(text) });
+  }
+  return new ApiError('business', businessMessage(val, text), { module, messageval: val, snippet: snippet(text) });
+}
+
+function shouldCheckBusinessMessage(module: string): boolean {
+  // Login failures are rendered by LoginScreen.loginError(), so keep returning
+  // the raw Discuz message there instead of converting it to an exception.
+  return module !== 'login';
+}
+
+function shouldRetry(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  if (err.code === 'network' || err.code === 'proxy_unavailable') return true;
+  if (err.code === 'http') return err.status === 502 || err.status === 503 || err.status === 504;
+  return err.code === 'non_json';
+}
+
+async function requestOnce(module: string, params: Record<string, any>, { method = 'GET', body = null }: RequestOpts): Promise<any> {
   try { await hydrateSessionCookies(); } catch (e) {}
   const qs = new URLSearchParams({ version: '4', module, ...params }).toString();
   const opts: RequestInit = { method, headers: { Accept: 'application/json' } };
@@ -48,14 +145,53 @@ async function request(module: string, params: Record<string, any> = {}, { metho
   try {
     res = await fetch(`${BASE}?${qs}`, opts);
   } catch (e) {
-    throw new Error(Platform.OS === 'web' ? '无法连接代理（请先运行 npm run proxy）' : '网络连接失败');
+    throw new ApiError(
+      Platform.OS === 'web' ? 'proxy_unavailable' : 'network',
+      Platform.OS === 'web' ? '无法连接本地代理，请确认 npm run proxy 正在运行' : '网络连接失败，请稍后重试',
+      { module },
+    );
   }
   const text = await res.text();
+  if (!res.ok) {
+    const bodySnippet = snippet(text);
+    if (res.status === 429 || looksRateLimited(text)) {
+      throw new ApiError('rate_limited', '访问太频繁了，请稍后再试', { module, status: res.status, snippet: bodySnippet });
+    }
+    throw new ApiError('http', `服务器暂时不可用（${res.status}），请稍后重试`, { module, status: res.status, snippet: bodySnippet });
+  }
   let json: any;
-  try { json = JSON.parse(text); } catch (e) { throw new Error('服务器返回了非预期内容（可能触发风控）'); }
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    const bodySnippet = snippet(text);
+    if (looksRiskControl(text)) {
+      throw new ApiError('risk_control', '站点触发安全验证，请稍后重试', { module, snippet: bodySnippet });
+    }
+    throw new ApiError('non_json', '服务器返回了非预期内容，请稍后重试', { module, snippet: bodySnippet });
+  }
+  if (!json || typeof json !== 'object') {
+    throw new ApiError('unknown', '服务器返回了非预期内容，请稍后重试', { module, snippet: snippet(text) });
+  }
+  if (!('Variables' in json)) {
+    throw new ApiError('unknown', '服务器返回缺少必要字段，请稍后重试', { module, snippet: snippet(text) });
+  }
   ingest(json.Variables);
   try { await persistSessionCookies(json.Variables); } catch (e) {}
+  const messageError = shouldCheckBusinessMessage(module) ? classifyMessage(module, json.Message) : null;
+  if (messageError) throw messageError;
   return json;
+}
+
+async function request(module: string, params: Record<string, any> = {}, opts: RequestOpts = {}): Promise<any> {
+  try {
+    return await requestOnce(module, params, opts);
+  } catch (e) {
+    if ((opts.method || 'GET') === 'GET' && shouldRetry(e)) {
+      await sleep(600);
+      return requestOnce(module, params, opts);
+    }
+    throw e;
+  }
 }
 
 // ===================== Auth =====================
