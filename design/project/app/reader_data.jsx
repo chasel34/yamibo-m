@@ -2,6 +2,11 @@
 // Three forum shapes (长篇带链接目录 / 中篇纯文本目录 / 短篇无目录) are all
 // abstracted into the same model: a book is a list of chapters; only the OP's
 // own posts become body text. Reader replies live per-chapter, off the main flow.
+//
+// 内容保全优先：每个 chapter 带 kind（chapter 正式章节 / seg 无标题正文段 /
+// note 楼主说明），floor（原楼层，用于「查看原楼层」兜底），railNo（目录序号）。
+// 书级带 confidence（识别置信度）、needsOrganize（首次需整理）、organizePages
+// （整理页数）等，用于驱动入口文案、首次整理进度、低置信度提示。
 
 window.BOOKS = (function(){
   const U = window.DATA.users;
@@ -44,6 +49,7 @@ window.BOOKS = (function(){
     }
     return out;
   }
+  function noteBody(lines){ return lines.map(v=>({t:"text", v})); }
 
   // —— per-chapter reader comments ——
   const CPOOL = [
@@ -67,12 +73,17 @@ window.BOOKS = (function(){
 
   const SUBS = ["天台上未说出口的话","夕阳、值日与一支铅笔","图书馆角落的秘密","雨檐下的关东煮","被风吹乱的刘海","借你的那本小说","回家路上的那条小路","毕业礼堂里的回头","很多年以后的那阵风","小指勾住小指","白雾上的名字","没有台词的午后","第三人称的她","距离这种东西","盛夏不会结束"];
 
+  const opFloor = (n)=> 1 + (n-1)*3;       // 楼主每隔几楼更新一次
+
   function makeChapters(count, prefix, openings){
     return Array.from({length:count}, (_,i)=>{
       const seed = i+1;
       return {
         id: prefix+"-c"+seed,
         no: seed,
+        railNo: seed,
+        kind: "chapter",
+        floor: opFloor(seed),
         title: "第"+seed+"话 · "+SUBS[i%SUBS.length],
         blocks: body(seed, openings && openings[i]),
         comments: comments(seed),
@@ -80,7 +91,7 @@ window.BOOKS = (function(){
     });
   }
 
-  // ① 长篇连载（带链接目录）—— 连载中 · 待更新
+  // ① 长篇连载（带链接目录）—— 高置信度 · 连载中 · 无需首次整理
   const sheng = {
     id:"book_sheng",
     title:"盛夏与她的制服裙",
@@ -89,28 +100,60 @@ window.BOOKS = (function(){
     status:"serial",
     statusText:"连载中",
     updated:"3天前更新 · 第128话",
+    confidence:"high",            // 楼主在首楼放了链接目录，章节对应可靠
+    needsOrganize:false,
+    organizePages:0,
+    update:"new",                 // 后台检查更新：发现新内容
     intro:"一个关于天台、夕阳和一句迟到了三年的告白的故事。从那个递来铅笔的午后写起，慢慢悠悠，不急着抵达盛夏的尽头。",
     chapters: makeChapters(128, "sheng", {
       0:"那是高一开学第二周的事。她忘了带铅笔，正手足无措的时候，斜后方递过来一支——浅蓝色的、笔身上贴着一小片向日葵贴纸。「给。」对方头也没抬。她道了谢，却在很久以后才明白，那个午后递过来的并不只是一支铅笔。",
     }),
   };
 
-  // ② 中篇连载（纯文本目录，无链接）/ 译文 —— 全 5 话完
-  const sun = {
-    id:"book_sun",
-    title:"向日葵不会说谎",
-    author: U.a,
-    shape:"中篇译文",
-    status:"complete",
-    statusText:"完结",
-    updated:"已完结",
-    intro:"经原作者授权翻译。一个关于盛夏、向日葵田与两个女孩的故事。共五话，已全部完结。",
-    chapters: makeChapters(5, "sun", {
-      0:"夏天是从向日葵田开始的。那一年我十六岁，第一次见到她的时候，她正站在一整片金黄里，逆着光，伸手去够一朵比她还高的向日葵。她回过头，问我：「你也是来看花的吗？」",
-    }),
-  };
+  // ② 中篇译文（纯文本目录，无链接）—— 低置信度 · 首次需整理 25 页 · 混合内容类型
+  //    目录形态对应需求里的示例：说明 / 正式章节 / 无标题段 / 作者的话
+  const sun = (function(){
+    const ch = [];
+    let rail = 0;
+    const note = (id, noteKind, floor, lines)=> ({ id:"sun-"+id, kind:"note", noteKind, railNo:null,
+      floor, no:ch.length+1, title:noteKind, blocks:noteBody(lines), comments:comments(ch.length+5) });
+    const chap = (id, sub, floor, opening)=>{ rail++; const r=rail; return { id:"sun-"+id, kind:"chapter",
+      railNo:r, floor, no:ch.length+1, title:"第"+r+"话 · "+sub, blocks:body(r+10, opening), comments:comments(r+1) }; };
+    const seg = (id, floor)=>{ rail++; const r=rail; return { id:"sun-"+id, kind:"seg", railNo:r, floor,
+      no:ch.length+1, title:"第 "+r+" 段", blocks:body(r+20), comments:comments(r) }; };
 
-  // ③ 短篇（无目录，整篇在首楼）—— 单章 · 完结
+    ch.push(note("intro","作品说明", 1, [
+      "经原作者 @ひまわり 授权翻译并转载，请勿二次搬运。原作链接见楼主签名档。",
+      "【避雷】校园百合，慢热，含少量原创情节补完。介意者请谨慎食用。",
+      "本帖楼主楼层即为正文，回复区欢迎讨论，但请不要剧透后续。",
+    ]));
+    ch.push(chap("c1","契机", 4, "夏天是从向日葵田开始的。那一年我十六岁，第一次见到她的时候，她正站在一整片金黄里，逆着光，伸手去够一朵比她还高的向日葵。她回过头，问我：「你也是来看花的吗？」"));
+    ch.push(chap("c2","雨天", 7));
+    ch.push(seg("seg3", null));   // 楼主把一段正文直接贴在楼层里、没有给标题 → 兜底为「第 3 段」，无独立楼层锚点
+    ch.push(note("afterword","作者的话", 13, [
+      "写到这里其实犹豫了很久要不要停。这一段是原作者在连载间隙发的随笔，并非正文，但删掉又觉得可惜，于是一并整理进来了。",
+      "如果你读到这里，谢谢你陪向日葵长这么高。",
+    ]));
+    ch.push(chap("c4","约定", 16));
+    return {
+      id:"book_sun",
+      title:"向日葵不会说谎",
+      author: U.a,
+      shape:"中篇译文",
+      status:"complete",
+      statusText:"完结",
+      updated:"已完结",
+      confidence:"low",
+      needsOrganize:true,
+      organizePages:25,
+      update:"fail",              // 后台检查更新：暂时无法检查
+      lowNote:"已按楼主楼层保留内容，章节名可能不完整。",
+      intro:"经原作者授权翻译。一个关于盛夏、向日葵田与两个女孩的故事。楼主把正文直接发在各楼层，没有链接目录。",
+      chapters: ch,
+    };
+  })();
+
+  // ③ 短篇（无目录，整篇在首楼）—— 低置信度 · 首次整理会失败一次 · 含楼主说明
   const kanto = {
     id:"book_kanto",
     title:"便利店关东煮与她的第十七个冬天",
@@ -119,14 +162,26 @@ window.BOOKS = (function(){
     status:"complete",
     statusText:"完结",
     updated:"已完结",
-    intro:"三千字的小品。关于一份总是多买一份的关东煮，和一句始终没说出口的话。",
+    confidence:"low",
+    needsOrganize:true,
+    organizePages:4,
+    organizeFails:true,          // 首次整理会失败一次，用于演示「整理失败」
+    update:"restructure",        // 检查更新：结构可能有变化
+    lowNote:"部分内容可能是楼主说明，可对照原楼层查看。",
+    intro:"三千字的小品。关于一份总是多买一份的关东煮，和一句始终没说出口的话。整篇发在首楼，无目录。",
     chapters: (function(){
-      const seed=8;
-      return [{
-        id:"kanto-c1", no:1, title:"便利店关东煮与她的第十七个冬天",
-        blocks: body(seed, "便利店的关东煮一到冬天就卖得特别好。她每天放学都会拐进去，买两份——一份萝卜，一份鱼饼。萝卜是她自己的，鱼饼是给那个总是比她晚到十分钟的人留的。"),
-        comments: comments(seed),
-      }];
+      return [
+        { id:"kanto-note", kind:"note", noteKind:"作品说明", railNo:null, floor:1, no:1,
+          title:"作品说明", comments:comments(2),
+          blocks:noteBody([
+            "一发完结，约三千字。首楼即正文，无章节划分。",
+            "【避雷】没什么雷点，就是有点甜，又有点淡淡的。",
+          ]) },
+        { id:"kanto-c1", kind:"chapter", railNo:1, floor:1, no:2,
+          title:"便利店关东煮与她的第十七个冬天",
+          blocks: body(8, "便利店的关东煮一到冬天就卖得特别好。她每天放学都会拐进去，买两份——一份萝卜，一份鱼饼。萝卜是她自己的，鱼饼是给那个总是比她晚到十分钟的人留的。"),
+          comments: comments(8) },
+      ];
     })(),
   };
 
@@ -134,6 +189,24 @@ window.BOOKS = (function(){
   return {
     map,
     get(id){ return map[id]; },
-    chapterCountText(b){ return b.shape==="短篇" ? "短篇" : ("全 "+b.chapters.length+" 话"); },
+    chapterCountText(b){ return b.shape==="短篇" ? "短篇" : ("全 "+b.chapters.filter(c=>c.kind!=="note").length+" 话"); },
   };
 })();
+
+// —— reading-mode meta: 整理状态、上次整理时间（per-book，localStorage）——
+window.ReaderMeta = {
+  key:(id)=>"yh_rd_org_"+id,
+  organizedTs(id){ try{ const v=localStorage.getItem(this.key(id)); return v?parseInt(v,10):0; }catch(e){ return 0; } },
+  isOrganized(id){ return this.organizedTs(id) > 0; },
+  setOrganized(id){ try{ localStorage.setItem(this.key(id), String(Date.now())); }catch(e){} },
+  lastText(id){
+    const ts = this.organizedTs(id); if(!ts) return null;
+    const d = new Date(ts), now = new Date();
+    const hm = d.getHours().toString().padStart(2,"0")+":"+d.getMinutes().toString().padStart(2,"0");
+    const sameDay = d.toDateString()===now.toDateString();
+    const yest = new Date(now); yest.setDate(now.getDate()-1);
+    if(sameDay) return "今天 "+hm;
+    if(d.toDateString()===yest.toDateString()) return "昨天 "+hm;
+    return (d.getMonth()+1)+"月"+d.getDate()+"日 "+hm;
+  },
+};

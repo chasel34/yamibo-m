@@ -40,15 +40,37 @@ const getRFontIdx = ()=>{ const v=parseInt(localStorage.getItem("yh_rd_font"),10
 })();
 
 // —— a single flow block rendered into the column layout ——
-const RBlock = ({b, T, fpx, onImg, onLink, onComments}) => {
-  if(b.t==="head") return (
-    <div style={{textAlign:"center", padding:"34px 0 30px", breakAfter:"avoid"}}>
-      <div style={{fontFamily:"var(--font-head)", fontSize:12, fontWeight:700, letterSpacing:"3px",
-        color:T.accent, textTransform:"uppercase"}}>第 {b.no} 话</div>
-      <div style={{fontFamily:"var(--font-body)", fontSize:fpx+3, fontWeight:600, color:T.ink, marginTop:12, lineHeight:1.4, padding:"0 6px"}}>{b.title}</div>
-      <div style={{width:30, height:2, background:T.accent, opacity:.5, margin:"20px auto 0"}}></div>
-    </div>
-  );
+const RBlock = ({b, T, fpx, onImg, onLink, onComments, onFloor}) => {
+  if(b.t==="head"){
+    // 楼主说明（非正文）：弱化、明确标注，避免被当作正文标题
+    if(b.kind==="note") return (
+      <div style={{textAlign:"center", padding:"30px 0 26px", breakAfter:"avoid"}}>
+        <div style={{display:"inline-flex", alignItems:"center", gap:6, fontFamily:"var(--font-head)", fontSize:11, fontWeight:700,
+          letterSpacing:"1px", color:T.soft, background:T.line, padding:"4px 11px", borderRadius:999}}>
+          <window.Icon name="note" size={13}/>说明 · {b.noteKind}
+        </div>
+        <div style={{fontFamily:"var(--font-body)", fontSize:fpx-1, color:T.soft, marginTop:14, lineHeight:1.6, padding:"0 10px"}}>以下为楼主说明，非小说正文</div>
+        <div style={{width:24, height:1.5, background:T.line, margin:"18px auto 0"}}></div>
+      </div>
+    );
+    // 无标题正文段：中性显示，不假装是正式章节
+    if(b.kind==="seg") return (
+      <div style={{textAlign:"center", padding:"34px 0 28px", breakAfter:"avoid"}}>
+        <div style={{fontFamily:"var(--font-head)", fontSize:11.5, fontWeight:600, letterSpacing:"1.5px", color:T.soft}}>无标题正文段</div>
+        <div style={{fontFamily:"var(--font-body)", fontSize:fpx+2, fontWeight:600, color:T.ink, marginTop:11, lineHeight:1.4}}>{b.title}</div>
+        <div style={{width:30, height:2, background:T.soft, opacity:.4, margin:"18px auto 0"}}></div>
+      </div>
+    );
+    // 正式章节
+    return (
+      <div style={{textAlign:"center", padding:"34px 0 30px", breakAfter:"avoid"}}>
+        <div style={{fontFamily:"var(--font-head)", fontSize:12, fontWeight:700, letterSpacing:"3px",
+          color:T.accent, textTransform:"uppercase"}}>第 {b.railNo} 话</div>
+        <div style={{fontFamily:"var(--font-body)", fontSize:fpx+3, fontWeight:600, color:T.ink, marginTop:12, lineHeight:1.4, padding:"0 6px"}}>{b.title}</div>
+        <div style={{width:30, height:2, background:T.accent, opacity:.5, margin:"20px auto 0"}}></div>
+      </div>
+    );
+  }
   if(b.t==="text") return (
     <p className="rd-para" style={{fontFamily:"var(--font-body)", fontSize:fpx, lineHeight:1.95, color:T.ink,
       margin:"0 0 0.95em", textIndent:"2em", textAlign:"justify"}}>{b.v}</p>
@@ -75,7 +97,17 @@ const RBlock = ({b, T, fpx, onImg, onLink, onComments}) => {
     </div>
   );
   if(b.t==="finis") return (
-    <div style={{textAlign:"center", fontFamily:"var(--font-head)", fontSize:fpx-4, color:T.soft, letterSpacing:"2px", padding:"22px 0 18px"}}>· 本话完 ·</div>
+    <div style={{textAlign:"center", fontFamily:"var(--font-head)", fontSize:fpx-4, color:T.soft, letterSpacing:"2px", padding:"22px 0 18px"}}>
+      {b.kind==="note" ? "· 楼主说明结束 ·" : b.kind==="seg" ? "· 本段完 ·" : "· 本话完 ·"}
+    </div>
+  );
+  if(b.t==="floorlink") return (
+    <div style={{textAlign:"center", padding:"2px 0 18px"}}>
+      <span onClick={()=>onFloor&&onFloor(b.floor)} style={{display:"inline-flex", alignItems:"center", gap:5,
+        fontFamily:"var(--font-head)", fontSize:fpx-6, fontWeight:500, color:T.soft, cursor:"pointer"}}>
+        <window.Icon name="external" size={fpx-7}/>对照原楼层
+      </span>
+    </div>
   );
   if(b.t==="cmt") return (
     <div onClick={()=>onComments&&onComments()} style={{margin:"4px 0 16px", padding:"15px 16px", borderRadius:14,
@@ -110,7 +142,9 @@ const RBlock = ({b, T, fpx, onImg, onLink, onComments}) => {
 // —— build the full flow array for a chapter ——
 function chapterFlow(book, ci){
   const ch = book.chapters[ci];
-  const flow = [{t:"head", no:ch.no, title:ch.title.replace(/^第\d+话 · /,"")}, ...ch.blocks, {t:"finis"}];
+  const head = {t:"head", kind:ch.kind||"chapter", no:ch.no, railNo:ch.railNo, noteKind:ch.noteKind, title:ch.title.replace(/^第\d+话 · /,"")};
+  const flow = [head, ...ch.blocks, {t:"finis", kind:ch.kind||"chapter"}];
+  flow.push({t:"floorlink", floor:ch.floor});
   flow.push({t:"cmt", n:ch.comments.length});
   if(ci===book.chapters.length-1) flow.push({t:"bookend", complete: book.status==="complete"});
   return flow;
@@ -121,6 +155,9 @@ const Reader = ({bookId, fresh}) => {
   const book = React.useMemo(()=> window.BOOKS.get(bookId), [bookId]);
   const total = book.chapters.length;
   const saved = window.ReaderProgress.get(bookId);
+  const organized = window.ReaderMeta.isOrganized(bookId);
+  const firstOrganize = book.needsOrganize && !organized;       // 首次需整理
+  const low = book.confidence==="low";
 
   const [theme, setThemeState] = React.useState(getRTheme);
   const [fontIdx, setFontIdxState] = React.useState(getRFontIdx);
@@ -133,8 +170,19 @@ const Reader = ({bookId, fresh}) => {
   const pageCount = pages.length;
   const [chrome, setChrome] = React.useState(false);
   const [panel, setPanel] = React.useState(null);     // toc|font|theme|comments
-  const [phase, setPhase] = React.useState(()=> (!fresh && saved) ? "resume" : "loading");
+  const [phase, setPhase] = React.useState(()=> firstOrganize ? "organizing" : ((!fresh && saved) ? "resume" : "loading"));
   const [hint, setHint] = React.useState(()=> localStorage.getItem("yh_rd_hint")!=="1");
+
+  // —— content-preservation state ——
+  const [orgRead, setOrgRead] = React.useState(0);
+  const [orgAttempt, setOrgAttempt] = React.useState(0);
+  const orgMode = React.useRef(firstOrganize ? "first" : "redo");
+  const [more, setMore] = React.useState(false);
+  const [confirmRedo, setConfirmRedo] = React.useState(false);
+  const [upd, setUpd] = React.useState(null);          // {mode:"checking"|book.update}
+  const [lowHint, setLowHint] = React.useState(()=> low && localStorage.getItem("yh_rd_lowhint_"+bookId)!=="1");
+  const updTimer = React.useRef(null);
+  const checkedRef = React.useRef(false);
 
   const pagerRef = React.useRef(null);
   const measRef = React.useRef(null);
@@ -196,6 +244,47 @@ const Reader = ({bookId, fresh}) => {
     if(phase==="loading"){ const t=setTimeout(()=> setPhase("reading"), 520); return ()=>clearTimeout(t); }
   }, [phase]);
 
+  // —— organize ticker (首次整理 / 重新整理，逐页读取) ——
+  React.useEffect(()=>{
+    if(phase!=="organizing") return;
+    const totalPg = book.organizePages || 12;
+    const failAt = (book.organizeFails && orgMode.current==="first" && orgAttempt===0) ? Math.max(2, Math.round(totalPg*0.5)) : -1;
+    setOrgRead(0);
+    let r = 0;
+    const step = totalPg>18 ? 95 : 230;
+    const iv = setInterval(()=>{
+      r += 1; setOrgRead(r);
+      if(failAt>0 && r>=failAt){ clearInterval(iv); setTimeout(()=> setPhase("organizeError"), 340); return; }
+      if(r>=totalPg){
+        clearInterval(iv);
+        window.ReaderMeta.setOrganized(bookId);
+        setTimeout(()=>{
+          setInstant(true);
+          if(orgMode.current==="redo"){ setPhase("reading"); }
+          else { setChapterIdx(0); setPageIdx(0); savedPage.current=0; setPhase("reading"); }
+        }, 380);
+      }
+    }, step);
+    return ()=> clearInterval(iv);
+  }, [phase, orgAttempt]);
+
+  // —— background update check (进入后检查一次，不打断阅读) ——
+  const runUpdateCheck = ()=>{
+    clearTimeout(updTimer.current);
+    setUpd({mode:"checking"});
+    updTimer.current = setTimeout(()=>{
+      setUpd({mode: book.update || "none"});
+      updTimer.current = setTimeout(()=> setUpd(null), 4600);
+    }, 1500);
+  };
+  React.useEffect(()=>{
+    if(phase==="reading" && !checkedRef.current && book.update){
+      checkedRef.current = true;
+      const t = setTimeout(runUpdateCheck, 1000);
+      return ()=> clearTimeout(t);
+    }
+  }, [phase]);
+
   // persist progress
   const pct = Math.max(1, Math.min(100, Math.round(((chapterIdx + (pageIdx+1)/Math.max(1,pageCount)) / total) * 100)));
   React.useEffect(()=>{
@@ -226,6 +315,19 @@ const Reader = ({bookId, fresh}) => {
     setPanel(null); setPhase("loading");
     setTimeout(()=>{ setInstant(true); setChapterIdx(ni); setPageIdx(0); savedPage.current=0; pendLast.current=false; setPhase("reading"); }, 480);
   };
+
+  // —— content-preservation handlers ——
+  const viewFloor = (floor)=>{
+    setMore(false); setPanel(null);
+    if(floor){ nav.toast("正在打开原楼层…"); setTimeout(()=> nav.pop(), 720); }
+    else { nav.toast("无法定位楼层，可打开帖子页"); setTimeout(()=> nav.pop(), 1150); }
+  };
+  const startRedo = ()=>{
+    setConfirmRedo(false); setMore(false); setPanel(null); setUpd(null);
+    orgMode.current = "redo"; savedPage.current = pageIdx;
+    setOrgAttempt(0); setPhase("organizing");
+  };
+  const dismissLowHint = ()=>{ setLowHint(false); localStorage.setItem("yh_rd_lowhint_"+bookId, "1"); };
 
   // —— gestures ——
   const onStart = (e)=>{
@@ -270,7 +372,7 @@ const Reader = ({bookId, fresh}) => {
   };
 
   // imperative demo hooks (for state capture; harmless in product)
-  React.useEffect(()=>{ window.__rd = {setPhase, setPanel, setChrome, jumpChapter, nextPage, prevPage, setTheme, setFontIdx, setPageIdx, goLast:()=>setPageIdx(Math.max(0,pages.length-1)), dim, pageCount, pagesLen:pages.length, phase, total, chapterIdx}; });
+  React.useEffect(()=>{ window.__rd = {setPhase, setPanel, setChrome, jumpChapter, nextPage, prevPage, setTheme, setFontIdx, setPageIdx, goLast:()=>setPageIdx(Math.max(0,pages.length-1)), setMore, setConfirmRedo, setUpd, setLowHint, runUpdateCheck, viewFloor, setOrgRead, dim, pageCount, pagesLen:pages.length, phase, total, chapterIdx}; });
 
   const transition = (dragging || instant || !glide) ? "none" : "transform .32s cubic-bezier(.32,.72,.34,1)";
   const contentW = dim.w ? dim.w - PX*2 : 320;
@@ -278,7 +380,8 @@ const Reader = ({bookId, fresh}) => {
     <RBlock key={i} b={b} T={T} fpx={fpx}
       onImg={(cap)=>{ const idx=Math.max(0,chImgs.findIndex(x=>x.cap===cap)); nav.openViewer(chImgs.length?chImgs:[{cap}], idx, book.title); }}
       onLink={(v)=>nav.toast("链接：将跳转网页 · "+v)}
-      onComments={()=>setPanel("comments")}/>
+      onComments={()=>setPanel("comments")}
+      onFloor={(f)=>viewFloor(f)}/>
   );
 
   return (
@@ -327,21 +430,52 @@ const Reader = ({bookId, fresh}) => {
         </div>
       )}
 
+      {/* top update hint (不打断阅读) */}
+      {phase==="reading" && upd && !chrome && (
+        <window.UpdateBanner key={upd.mode} T={T} state={upd}
+          onAction={()=>setConfirmRedo(true)} onClose={()=>{ clearTimeout(updTimer.current); setUpd(null); }}/>
+      )}
+
       {/* chrome: top + bottom bars */}
       {chrome && phase==="reading" && (
         <window.ReaderChrome
           book={book} ch={ch} T={T} total={total} chapterIdx={chapterIdx} pct={pct}
           onBack={()=>nav.pop()} onToc={()=>setPanel("toc")} onFont={()=>setPanel("font")}
-          onTheme={()=>setPanel("theme")} onJump={jumpChapter}
+          onTheme={()=>setPanel("theme")} onJump={jumpChapter} onMore={()=>setMore(true)}
+          onViewFloor={()=>viewFloor(ch.floor)}
           onPrevCh={()=>{ if(chapterIdx>0) jumpChapter(chapterIdx-1); }}
           onNextCh={()=>{ if(chapterIdx<total-1) jumpChapter(chapterIdx+1); }}/>
+      )}
+
+      {/* low-confidence first-entry hint */}
+      {phase==="reading" && low && lowHint && !chrome && !panel && !hint && (
+        <window.LowConfHint T={T} book={book} onClose={dismissLowHint}/>
       )}
 
       {/* panels & overlays */}
       <window.ReaderPanels
         panel={panel} setPanel={setPanel} book={book} ch={ch} T={T} total={total}
         chapterIdx={chapterIdx} fontIdx={fontIdx} setFontIdx={setFontIdx}
-        setTheme={setTheme} jumpChapter={jumpChapter}/>
+        setTheme={setTheme} jumpChapter={jumpChapter}
+        onCheck={runUpdateCheck} onRedo={()=>{ setPanel(null); setConfirmRedo(true); }} onViewFloor={viewFloor}/>
+
+      {/* more menu + restructure confirm */}
+      {more && phase==="reading" && (
+        <window.MoreMenu T={T} book={book} ch={ch} onClose={()=>setMore(false)}
+          onCheck={()=>{ setMore(false); runUpdateCheck(); }}
+          onRedo={()=>{ setMore(false); setConfirmRedo(true); }}
+          onViewFloor={()=>viewFloor(ch.floor)}/>
+      )}
+      {confirmRedo && (
+        <window.RestructureConfirm T={T} onCancel={()=>setConfirmRedo(false)} onConfirm={startRedo}/>
+      )}
+
+      {/* organize states (first-time / re-organize) */}
+      {(phase==="organizing" || phase==="organizeError") && (
+        <window.OrganizeView T={T} book={book} mode={orgMode.current}
+          error={phase==="organizeError"} read={orgRead} total={book.organizePages||12}
+          onCancel={()=>nav.pop()} onRetry={()=>{ setOrgAttempt(a=>a+1); setPhase("organizing"); }}/>
+      )}
 
       <window.ReaderStates phase={phase} setPhase={setPhase} T={T} book={book} saved={saved}
         onResume={()=>{ savedPage.current = (saved&&saved.page)||0; setChapterIdx((saved&&saved.chapter)||0); setPhase("loading"); }}

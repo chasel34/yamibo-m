@@ -44,27 +44,61 @@ const ReaderEntry = ({thread}) => {
   const book = window.BOOKS.get(thread.novelId);
   if(!book) return null;
   const prog = window.ReaderProgress ? window.ReaderProgress.get(book.id) : null;
+  const organized = window.ReaderMeta ? window.ReaderMeta.isOrganized(book.id) : true;
+  const firstOrganize = book.needsOrganize && !organized;          // 首次需整理
+  const low = book.confidence==="low";
   const open = (fresh)=> nav.push("reader", {bookId:book.id, fresh});
   const countText = window.BOOKS.chapterCountText(book);
+
+  // 高置信度且无需首次整理时，入口与右上角阅读按钮重复 —— 不再单独出卡片
+  if(!low && !firstOrganize) return null;
+
+  // 入口主按钮文案：随识别置信度 / 是否需首次整理 / 是否有进度变化
+  const mainLabel = prog
+    ? "续读 · "+prog.chapterTitle.split(" · ")[0]+" "+prog.pct+"%"
+    : firstOrganize ? "整理并阅读"
+    : low ? "尝试阅读模式" : "阅读模式";
+
   return (
     <div style={{margin:"20px 0 4px", padding:"16px 17px 15px", borderRadius:16,
       background:"var(--accent-soft)", border:"1px solid var(--line)"}}>
       <div className="row" style={{gap:12, alignItems:"flex-start"}}>
-        <div style={{width:40, height:40, borderRadius:11, background:"var(--accent)", color:"#fff",
+        <div style={{width:40, height:40, borderRadius:11, background: low?"var(--card)":"var(--accent)",
+          color: low?"var(--accent-ink)":"#fff", border: low?"1px solid var(--line-strong)":"none",
           display:"flex", alignItems:"center", justifyContent:"center", flex:"0 0 auto"}}>
           <Ic name="book" size={21}/>
         </div>
         <div style={{flex:1, minWidth:0}}>
-          <div style={{fontFamily:"var(--font-head)", fontSize:15, fontWeight:700, color:"var(--ink)"}}>用阅读模式打开</div>
+          <div className="row" style={{gap:7}}>
+            <span style={{fontFamily:"var(--font-head)", fontSize:15, fontWeight:700, color:"var(--ink)"}}>
+              {low ? "尝试用阅读模式打开" : "用阅读模式打开"}
+            </span>
+          </div>
           <div className="timestamp" style={{fontSize:12.5, marginTop:3}}>
             {book.shape}{countText!==book.shape ? " · "+countText : ""} · {book.statusText}
           </div>
         </div>
       </div>
-      <div className="row" style={{gap:10, marginTop:14}}>
+
+      {/* 低置信度 / 首次整理：温和说明，降低焦虑而非报错 */}
+      {(low || firstOrganize) && (
+        <div className="row" style={{gap:8, marginTop:11, padding:"9px 11px", borderRadius:11,
+          background:"color-mix(in srgb, var(--card) 70%, transparent)", alignItems:"flex-start"}}>
+          <span style={{color:"var(--muted)", flex:"0 0 auto", marginTop:1, display:"flex"}}><Ic name="info" size={15}/></span>
+          <span style={{fontFamily:"var(--font-head)", fontSize:12, lineHeight:1.55, color:"var(--ink-soft)"}}>
+            {firstOrganize
+              ? "首次打开需先整理楼主楼层，稍候片刻；之后将直接打开。"
+              : "该帖无链接目录，已尽量保留楼主内容，章节名可能不完整。"}
+          </span>
+        </div>
+      )}
+
+      <div className="row" style={{gap:10, marginTop:13}}>
         <button onClick={()=>open(!prog)} style={{flex:1, height:46, border:"none", borderRadius:999,
-          background:"var(--accent)", color:"#fff", fontFamily:"var(--font-head)", fontSize:15, fontWeight:600, cursor:"pointer"}}>
-          {prog ? "续读 · "+prog.chapterTitle.split(" · ")[0]+" "+prog.pct+"%" : "开始阅读"}
+          background:"var(--accent)", color:"#fff", fontFamily:"var(--font-head)", fontSize:15, fontWeight:600, cursor:"pointer",
+          display:"flex", alignItems:"center", justifyContent:"center", gap:7}}>
+          {firstOrganize && !prog && <Ic name="sparkle" size={17}/>}
+          {mainLabel}
         </button>
         {prog && <button onClick={()=>open(true)} style={{flex:"0 0 auto", height:46, padding:"0 18px", borderRadius:999,
           background:"transparent", border:"1px solid var(--line-strong)", color:"var(--ink-soft)",
@@ -168,6 +202,11 @@ const ThreadScreen = ({thread, board}) => {
           </div>
         </div>
         <div className="feed-div"></div>
+
+        {/* reading-mode entry — 仅小说帖、仅第一页 */}
+        {isNovel && showOP && (
+          <div style={{padding:"0 22px"}}><ReaderEntry thread={thread}/></div>
+        )}
 
         {/* OP body — 仅第一页 */}
         {showOP && (

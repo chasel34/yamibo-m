@@ -46,7 +46,7 @@ const ChapterSlider = ({total, chapterIdx, T, onJump}) => {
 };
 
 // —— chrome: top + bottom toolbars ——
-const ReaderChrome = ({book, ch, T, total, chapterIdx, pct, onBack, onToc, onFont, onTheme, onJump, onPrevCh, onNextCh}) => {
+const ReaderChrome = ({book, ch, T, total, chapterIdx, pct, onBack, onToc, onFont, onTheme, onJump, onPrevCh, onNextCh, onMore, onViewFloor}) => {
   const {entered:ent, settled} = window.useEntered();
   const tr = settled ? "none" : "transform .3s cubic-bezier(.32,.72,.34,1)";
   const cb = (fn)=> (e)=>{ e.stopPropagation(); fn&&fn(); };
@@ -67,6 +67,7 @@ const ReaderChrome = ({book, ch, T, total, chapterIdx, pct, onBack, onToc, onFon
             <div style={{fontFamily:"var(--font-head)", fontSize:11.5, color:T.soft, marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{ch.title}</div>
           </div>
           <button onClick={cb(onToc)} style={iconBtn}><RIcon name="forum" size={21}/></button>
+          <button onClick={cb(onMore)} style={iconBtn}><RIcon name="more" size={21}/></button>
         </div>
       </div>
 
@@ -83,6 +84,7 @@ const ReaderChrome = ({book, ch, T, total, chapterIdx, pct, onBack, onToc, onFon
           <button onClick={cb(onToc)} style={actBtn}><RIcon name="doc" size={21}/>目录</button>
           <button onClick={cb(onFont)} style={actBtn}><RIcon name="type" size={21}/>字号</button>
           <button onClick={cb(onTheme)} style={actBtn}><RIcon name="eye" size={21}/>主题</button>
+          <button onClick={cb(onViewFloor)} style={actBtn}><RIcon name="external" size={21}/>原楼层</button>
         </div>
       </div>
     </>
@@ -114,11 +116,11 @@ const RSheet = ({T, onClose, children, title, right}) => {
 };
 
 // —— panels switch ——
-const ReaderPanels = ({panel, setPanel, book, ch, T, total, chapterIdx, fontIdx, setFontIdx, setTheme, jumpChapter}) => {
+const ReaderPanels = ({panel, setPanel, book, ch, T, total, chapterIdx, fontIdx, setFontIdx, setTheme, jumpChapter, onCheck, onRedo, onViewFloor}) => {
   const close = ()=> setPanel(null);
   if(!panel) return null;
 
-  if(panel==="toc") return <TocDrawer book={book} T={T} total={total} chapterIdx={chapterIdx} onClose={close} onPick={jumpChapter}/>;
+  if(panel==="toc") return <TocDrawer book={book} T={T} total={total} chapterIdx={chapterIdx} onClose={close} onPick={jumpChapter} onCheck={onCheck} onRedo={onRedo}/>;
 
   if(panel==="font"){
     const fpx = window.RFONTS[fontIdx];
@@ -202,11 +204,13 @@ const ReaderPanels = ({panel, setPanel, book, ch, T, total, chapterIdx, fontIdx,
 };
 
 // —— TOC drawer (left) ——
-const TocDrawer = ({book, T, total, chapterIdx, onClose, onPick}) => {
+const TocDrawer = ({book, T, total, chapterIdx, onClose, onPick, onCheck, onRedo}) => {
   const {entered:ent, settled} = window.useEntered();
   const [rev, setRev] = React.useState(false);
   const list = rev ? book.chapters.slice().reverse() : book.chapters;
   const scRef = React.useRef(null);
+  const lastText = window.ReaderMeta ? window.ReaderMeta.lastText(book.id) : null;
+  const low = book.confidence==="low";
   React.useEffect(()=>{
     // scroll current chapter into view within the drawer (no page scroll)
     const el = scRef.current; if(!el) return;
@@ -220,23 +224,61 @@ const TocDrawer = ({book, T, total, chapterIdx, onClose, onPick}) => {
         background:T.chrome, boxShadow:"10px 0 44px rgba(30,18,12,.26)", display:"flex", flexDirection:"column",
         transform: ent?"translateX(0)":"translateX(-102%)", transition: settled?"none":"transform .32s cubic-bezier(.32,.72,.34,1)"}}>
         <RStatus T={T}/>
-        <div style={{padding:"6px 20px 16px", borderBottom:"1px solid "+T.line}}>
+        <div style={{padding:"6px 20px 14px", borderBottom:"1px solid "+T.line}}>
           <div style={{fontFamily:"var(--font-head)", fontSize:18, fontWeight:700, color:T.ink}}>{book.title}</div>
           <div className="row" style={{justifyContent:"space-between", marginTop:6}}>
             <span style={{fontFamily:"var(--font-head)", fontSize:12.5, color:T.soft}}>{window.BOOKS.chapterCountText(book)} · {book.statusText}</span>
             <span onClick={()=>setRev(!rev)} style={{fontFamily:"var(--font-head)", fontSize:12.5, fontWeight:600, color:T.accent, cursor:"pointer"}}>{rev?"倒序":"正序"} ⇅</span>
           </div>
         </div>
+
+        {/* —— 整理状态 + 手动操作 —— */}
+        <div style={{padding:"11px 16px 12px", borderBottom:"1px solid "+T.line}}>
+          <div className="row" style={{justifyContent:"space-between", marginBottom:9}}>
+            <span style={{display:"flex", alignItems:"center", gap:6, fontFamily:"var(--font-head)", fontSize:11.5, color:T.soft}}>
+              <RIcon name="history" size={13}/>{lastText ? "上次整理："+lastText : "尚未整理"}
+            </span>
+          </div>
+          <div className="row" style={{gap:8}}>
+            <button onClick={()=>{ onClose(); onCheck&&onCheck(); }} style={tocBtn(T, false)}>
+              <RIcon name="refresh" size={15}/>检查更新
+            </button>
+            <button onClick={()=>{ onRedo&&onRedo(); }} style={tocBtn(T, true)}>
+              <RIcon name="layers" size={15}/>重新整理全文
+            </button>
+          </div>
+        </div>
+
+        {/* —— 低置信度温和提示 —— */}
+        {low && book.lowNote && (
+          <div className="row" style={{gap:8, padding:"11px 16px", borderBottom:"1px solid "+T.line, alignItems:"flex-start",
+            background:"color-mix(in srgb, "+T.accent+" 7%, transparent)"}}>
+            <span style={{color:T.accent, flex:"0 0 auto", marginTop:1, display:"flex"}}><RIcon name="info" size={15}/></span>
+            <span style={{fontFamily:"var(--font-head)", fontSize:12, lineHeight:1.55, color:T.ink}}>{book.lowNote}</span>
+          </div>
+        )}
+
         <div ref={scRef} className="rd-scroll" style={{flex:1, overflowY:"auto"}}>
-          {list.map(c=>{
-            const cur = c.no-1===chapterIdx;
+          {list.map((c,idx)=>{
+            const cur = (book.chapters.indexOf(c))===chapterIdx;
+            const isNote = c.kind==="note";
+            const isSeg = c.kind==="seg";
+            const railTxt = isNote ? "说明" : (c.railNo!=null ? c.railNo.toString().padStart(2,"0") : "—");
+            const titleTxt = isNote ? ("作品说明"===c.noteKind ? c.noteKind : c.noteKind) : c.title.replace(/^第\d+话 · /,"");
+            const railColor = cur ? T.accent : (isNote ? T.soft : (isSeg ? T.soft : T.soft));
+            const titleColor = cur ? T.accent : (isNote ? T.soft : T.ink);
             return (
-              <div key={c.id} data-cur={cur?"1":"0"} onClick={()=>onPick(c.no-1)}
-                style={{display:"flex", alignItems:"center", gap:12, padding:"14px 20px", cursor:"pointer",
+              <div key={c.id} data-cur={cur?"1":"0"} onClick={()=>onPick(book.chapters.indexOf(c))}
+                style={{display:"flex", alignItems:"center", gap:12, padding:"13px 20px", cursor:"pointer",
                   borderLeft:(cur? "3px solid "+T.accent : "3px solid transparent"), background: cur? T.bg : "transparent"}}>
-                <span style={{fontFamily:"var(--font-head)", fontSize:12.5, fontWeight:700, color:cur?T.accent:T.soft, flex:"0 0 38px", fontVariantNumeric:"tabular-nums"}}>{c.no.toString().padStart(2,"0")}</span>
-                <span style={{flex:1, minWidth:0, fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:cur?700:500, color:cur?T.accent:T.ink,
-                  whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{c.title.replace(/^第\d+话 · /,"")}</span>
+                <span style={{fontFamily:"var(--font-head)", fontSize: isNote?10.5:12.5, fontWeight:700, color:railColor,
+                  flex:"0 0 38px", fontVariantNumeric:"tabular-nums", letterSpacing: isNote?".3px":0,
+                  opacity: isNote?.9:1}}>{railTxt}</span>
+                <span style={{flex:1, minWidth:0, fontFamily:"var(--font-head)", fontSize:14, fontWeight:cur?700:(isNote?500:500),
+                  color:titleColor, opacity:isNote?.85:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                  fontStyle: isSeg?"normal":"normal"}}>
+                  {isNote && <span style={{color:T.soft, fontWeight:600}}>说明 · </span>}{titleTxt}
+                </span>
                 {cur && <span style={{fontFamily:"var(--font-head)", fontSize:11, fontWeight:600, color:T.accent}}>在读</span>}
               </div>
             );
@@ -247,6 +289,9 @@ const TocDrawer = ({book, T, total, chapterIdx, onClose, onPick}) => {
     </>
   );
 };
+const tocBtn = (T, primary)=> ({flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:6, height:38, borderRadius:11,
+  border: primary? "none":"1px solid "+T.line, background: primary? T.accent : T.bg, color: primary? "#fff":T.ink,
+  fontFamily:"var(--font-head)", fontSize:12.5, fontWeight:600, cursor:"pointer"});
 
 // —— states: loading / resume / error ——
 const ReaderStates = ({phase, setPhase, T, book, saved, onResume, onRestart, onRetry, onExit}) => {
@@ -303,4 +348,4 @@ const ReaderStates = ({phase, setPhase, T, book, saved, onResume, onRestart, onR
   return null;
 };
 
-Object.assign(window, { ReaderChrome, ReaderPanels, ReaderStates, TocDrawer, RSheet, ChapterSlider });
+Object.assign(window, { ReaderChrome, ReaderPanels, ReaderStates, TocDrawer, RSheet, ChapterSlider, RStatus });
