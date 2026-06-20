@@ -1,4 +1,4 @@
-// Local browse history (no server API for this per docs/04-BACKLOG.md).
+// Local browse history (no server API for this per docs/ROADMAP.md).
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { HistoryItem, NavAuthor } from './types';
 

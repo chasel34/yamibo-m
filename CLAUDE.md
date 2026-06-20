@@ -3,8 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 百合会 (yamibo) 第三方移动端：Expo + React Native + TypeScript，消费 Discuz! X3.5 移动 JSON API。
-当前为**只读 v1**（登录 + 浏览 + 个人信息）；写操作（发帖/回帖/收藏/私信…）属 v2，见 @docs/04-BACKLOG.md。
-运行与背景见 @README.md，接口契约见 @docs/02-API.md。
+当前为**只读 v1**（登录 + 浏览 + 个人信息）；写操作（发帖/回帖/收藏/私信…）属 v2，见 @docs/ROADMAP.md。
+运行与背景见 @README.md，接口契约见 @docs/API.md。
 
 ## Commands
 

@@ -1,4 +1,4 @@
-// Discuz mobile API client + mappers (docs/02-API.md).
+// Discuz mobile API client + mappers (docs/API.md).
 // Web talks to the local CORS/cookie proxy (npm run proxy); native talks to the
 // forum directly and lets the OS manage cookies.
 import { Platform } from 'react-native';
