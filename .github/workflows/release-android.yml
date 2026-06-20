@@ -82,8 +82,13 @@ jobs:
           body: |
             # yamibo-m ${{ github.ref_name }}
 
-            Android preview/internal APK built with EAS.
+            这是百合会非官方第三方移动端客户端的 Android 发布版本。
 
-            EAS build: ${{ steps.eas_build.outputs.dashboard_url }}
+            ## 下载
 
-            Disclaimer: This is an unofficial third-party mobile client for 百合会 and is not affiliated with or endorsed by the official 百合会 forum.
+            - Android APK：请在本页面的 Assets 中下载 `yamibo-m-${{ github.ref_name }}.apk`
+            - EAS 构建记录：${{ steps.eas_build.outputs.dashboard_url }}
+
+            ## 说明
+
+            本项目为非官方个人项目，与百合会官方无隶属、合作或背书关系。客户端通过论坛内置 Discuz! 移动 JSON API 获取数据。
