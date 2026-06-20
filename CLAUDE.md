@@ -32,3 +32,5 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Conventions
 
 - Conventional Commits（`feat:`/`fix:`/`chore:`/`docs:`…）；仅在被明确要求时提交。
+- 后续功能开发不要直接推送到 `main`：从 feature branch 开发，通过 PR 合并到 `main`。
+- 发布版本使用 `v*` tag 触发 GitHub Release 流程；`main` 合并不自动构建 APK，以节省 Expo 免费额度。

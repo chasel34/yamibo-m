@@ -2,7 +2,8 @@
   "expo": {
     "name": "百合会",
     "slug": "yamibo-m",
-    "version": "1.0.0",
+    "owner": "lemoncola",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,6 +13,7 @@
     },
     "android": {
       "package": "com.yamibo.reader",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#fcfbfa",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,6 +26,11 @@
     },
     "plugins": [
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "eb17ed95-0774-4a83-86ba-956550810f0b"
+      }
+    }
   }
 }
