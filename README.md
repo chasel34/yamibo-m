@@ -16,6 +16,12 @@
 - **浏览历史** —— 本地记录最近浏览的帖子
 - **主题** —— 浅 / 深色一键切换并记忆
 
+## 界面预览
+
+| 登录 | 论坛首页 | 板块帖子 | 帖子详情 | 图片查看 |
+|:---:|:---:|:---:|:---:|:---:|
+| <img src="docs/screenshots/01-login.png" width="160" alt="登录" /> | <img src="docs/screenshots/02-home.png" width="160" alt="论坛首页" /> | <img src="docs/screenshots/03-board.png" width="160" alt="板块帖子列表" /> | <img src="docs/screenshots/04-thread.png" width="160" alt="帖子详情" /> | <img src="docs/screenshots/05-image-viewer.png" width="160" alt="帖内图片查看" /> |
+
 ## 技术栈
 
 Expo + React Native + TypeScript，消费 Discuz! X3.5 论坛内置的移动 JSON API
