@@ -25,10 +25,55 @@ export function subscribeNotice(fn: (n: Notice) => void) { noticeListeners.add(f
 export function getNotice(): Notice { return notice; }
 export function getMe(): Me { return me; }
 
-function ingest(v: any) {
-  if (!v) return;
-  if (v.member_uid != null) me = { uid: v.member_uid, username: v.member_username, avatar: v.member_avatar };
-  if (v.notice) { notice = v.notice; noticeListeners.forEach((fn) => fn(notice)); }
+function isRecord(value: any): value is Record<string, any> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asRecord(value: any): Record<string, any> {
+  return isRecord(value) ? value : {};
+}
+
+function asArray<T = any>(value: any): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: any, fallback = ''): string {
+  if (value == null) return fallback;
+  return String(value);
+}
+
+function asInt(value: any, fallback = 0): number {
+  const n = parseInt(asString(value), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function asPositiveInt(value: any, fallback: number): number {
+  const n = asInt(value, fallback);
+  return n > 0 ? n : fallback;
+}
+
+function variablesOf(response: any): Record<string, any> {
+  return asRecord(response?.Variables);
+}
+
+function ingest(raw: any) {
+  const v = asRecord(raw);
+  if (!Object.keys(v).length) return;
+  if (v.member_uid != null) me = {
+    uid: asString(v.member_uid, '0'),
+    username: asString(v.member_username),
+    avatar: v.member_avatar == null ? null : asString(v.member_avatar),
+  };
+  const n = asRecord(v.notice);
+  if (Object.keys(n).length) {
+    notice = {
+      newpush: asString(n.newpush, '0'),
+      newpm: asString(n.newpm, '0'),
+      newprompt: asString(n.newprompt, '0'),
+      newmypost: asString(n.newmypost, '0'),
+    };
+    noticeListeners.forEach((fn) => fn(notice));
+  }
 }
 
 interface RequestOpts {
@@ -172,7 +217,7 @@ async function requestOnce(module: string, params: Record<string, any>, { method
   if (!json || typeof json !== 'object') {
     throw new ApiError('unknown', '服务器返回了非预期内容，请稍后重试', { module, snippet: snippet(text) });
   }
-  if (!('Variables' in json)) {
+  if (!('Variables' in json) || !isRecord(json.Variables)) {
     throw new ApiError('unknown', '服务器返回缺少必要字段，请稍后重试', { module, snippet: snippet(text) });
   }
   ingest(json.Variables);
@@ -197,7 +242,7 @@ async function request(module: string, params: Record<string, any> = {}, opts: R
 // ===================== Auth =====================
 export async function login(username: string, password: string): Promise<{ ok: boolean; message: string; user: Me | null }> {
   const pre = await request('login');
-  const formhash = pre.Variables?.formhash || '';
+  const formhash = asString(pre.Variables?.formhash);
   const body = new URLSearchParams({
     username, password, questionid: '0', answer: '', cookietime: '2592000', formhash,
   }).toString();
@@ -209,7 +254,7 @@ export async function login(username: string, password: string): Promise<{ ok: b
 export async function logout(): Promise<void> {
   try {
     const idx = await request('forumindex');
-    const formhash = idx.Variables?.formhash || '';
+    const formhash = asString(idx.Variables?.formhash);
     await request('logout', { formhash });
   } catch (e) { /* ignore */ }
   if (Platform.OS === 'web') { try { await fetch(`${PROXY}/__reset`); } catch (e) {} }
@@ -220,28 +265,43 @@ export async function logout(): Promise<void> {
 export async function checkAuth(): Promise<string | null> {
   try {
     const r = await request('forumindex');
-    return r.Variables?.member_uid && r.Variables.member_uid !== '0' ? r.Variables.member_uid : null;
+    const uid = asString(r.Variables?.member_uid);
+    return uid && uid !== '0' ? uid : null;
   } catch (e) { return null; }
 }
 
 // ===================== Forum index =====================
 export async function getForumIndex(): Promise<ForumIndexData> {
-  const v = (await request('forumindex')).Variables || {};
+  const v = variablesOf(await request('forumindex'));
   const forumMap: Record<string, any> = {};
-  (v.forumlist || []).forEach((f: any) => { forumMap[f.fid] = f; });
-  const mapBoard = (f: any): BoardSummary => ({
-    id: f.fid, fid: f.fid, name: f.name,
-    desc: stripHtml(f.description || ''),
-    today: parseInt(f.todayposts || '0', 10),
-    threads: f.threads, posts: f.posts,
-    iconUrl: f.icon || null,
-    subs: (f.sublist || []).map((s: any) => ({ fid: s.fid, name: s.name, today: parseInt(s.todayposts || '0', 10) })),
+  asArray(v.forumlist).forEach((raw: any) => {
+    const f = asRecord(raw);
+    const fid = asString(f.fid);
+    if (fid) forumMap[fid] = f;
   });
-  const groups: ForumGroup[] = (v.catlist || []).map((cat: any) => ({
-    id: cat.fid, name: cat.name, desc: '',
-    boards: (cat.forums || []).map((fid: string) => forumMap[fid]).filter(Boolean).map(mapBoard),
-  })).filter((g: ForumGroup) => g.boards.length);
-  return { groups, me: { uid: v.member_uid, name: v.member_username, avatar: v.member_avatar } };
+  const mapBoard = (raw: any): BoardSummary => {
+    const f = asRecord(raw);
+    return {
+      id: asString(f.fid), fid: asString(f.fid), name: asString(f.name, '未命名板块'),
+      desc: stripHtml(f.description),
+      today: asInt(f.todayposts),
+      threads: f.threads == null ? undefined : asString(f.threads),
+      posts: f.posts == null ? undefined : asString(f.posts),
+      iconUrl: f.icon ? asString(f.icon) : null,
+      subs: asArray(f.sublist).map((rawSub: any) => {
+        const s = asRecord(rawSub);
+        return { fid: asString(s.fid), name: asString(s.name, '子版块'), today: asInt(s.todayposts), iconUrl: s.icon ? asString(s.icon) : null };
+      }).filter((s) => s.fid),
+    };
+  };
+  const groups: ForumGroup[] = asArray(v.catlist).map((rawCat: any) => {
+    const cat = asRecord(rawCat);
+    return {
+      id: asString(cat.fid), name: asString(cat.name, '分区'), desc: '',
+      boards: asArray(cat.forums).map((fid: any) => forumMap[asString(fid)]).filter(Boolean).map(mapBoard),
+    };
+  }).filter((g: ForumGroup) => g.boards.length);
+  return { groups, me: { uid: asString(v.member_uid), name: asString(v.member_username), avatar: asString(v.member_avatar) } };
 }
 
 // ===================== Board (forumdisplay) =====================
@@ -249,7 +309,7 @@ export async function getForumIndex(): Promise<ForumIndexData> {
 // 关键：选中 typeid 时必须同时带一个 filter，typeid 才会真正生效（已对线上 API 验证）。
 export async function getBoard(fid: string, page = 1, typeid: string | number = 0, sort: SortMode = '全部'): Promise<BoardData> {
   const params: Record<string, any> = { fid, page };
-  const hasType = typeid && typeid !== 0;
+  const hasType = typeid != null && asString(typeid) !== '' && asString(typeid) !== '0';
   if (hasType) params.typeid = typeid;
   switch (sort) {
     case '最新': params.filter = 'dateline'; params.orderby = 'dateline'; break;
@@ -257,77 +317,79 @@ export async function getBoard(fid: string, page = 1, typeid: string | number = 
     case '精华': params.filter = 'digest'; params.digest = '1'; break;
     default: if (hasType) params.filter = 'typeid'; break; // 全部
   }
-  const v = (await request('forumdisplay', params)).Variables || {};
-  const tt: Record<string, string> = v.threadtypes?.types || {};
-  const types: ThreadType[] = Object.keys(tt).map((id) => ({ id, name: tt[id] }));
-  const subs: BoardSub[] = (v.sublist || []).map((s: any) => ({
-    fid: s.fid, name: s.name, today: parseInt(s.todayposts || '0', 10), iconUrl: s.icon || null,
-  }));
+  const v = variablesOf(await request('forumdisplay', params));
+  const tt: Record<string, any> = asRecord(asRecord(v.threadtypes).types);
+  const types: ThreadType[] = Object.keys(tt).map((id) => ({ id, name: asString(tt[id]) })).filter((it) => it.name);
+  const subs: BoardSub[] = asArray(v.sublist).map((rawSub: any) => {
+    const s = asRecord(rawSub);
+    return { fid: asString(s.fid), name: asString(s.name, '子版块'), today: asInt(s.todayposts), iconUrl: s.icon ? asString(s.icon) : null };
+  }).filter((s) => s.fid);
   // 置顶/公告（displayorder>0）单独抽出做 PinnedRow；type 名为「公告」→ notice，其余 → sticky。
   // 它们只在第 1 页（无筛选）出现，所以 hasMore 仍按 raw 总数判断，而非过滤后的列表。
-  const raw: any[] = v.forum_threadlist || [];
-  const isPinned = (t: any) => parseInt(t.displayorder || '0', 10) > 0;
+  const raw: any[] = asArray(v.forum_threadlist).map(asRecord);
+  const isPinned = (t: any) => asInt(t.displayorder) > 0;
   const pinned: PinnedItem[] = raw.filter(isPinned).map((t) => ({
-    id: t.tid, tid: t.tid, title: stripHtml(t.subject),
-    kind: tt[t.typeid] === '公告' ? 'notice' : 'sticky',
+    id: asString(t.tid), tid: asString(t.tid), title: stripHtml(t.subject),
+    kind: asString(tt[asString(t.typeid)]) === '公告' ? 'notice' : 'sticky',
   }));
   const list = raw.filter((t) => !isPinned(t)).map((t) => {
     const excerpt = t.message ? excerptText(t.message)
-      : (t.reply && t.reply[0] ? excerptText(t.reply[0].message) : '');
+      : (asArray(t.reply)[0] ? excerptText(asRecord(asArray(t.reply)[0]).message) : '');
     return {
-      id: t.tid, tid: t.tid, typeid: t.typeid,
-      tag: tt[t.typeid] || '',
+      id: asString(t.tid), tid: asString(t.tid), typeid: t.typeid == null ? undefined : asString(t.typeid),
+      tag: asString(tt[asString(t.typeid)]),
       title: stripHtml(t.subject),
-      author: { name: t.author, uid: t.authorid },
-      time: timeFromUnix(t.dblastpost) || t.lastpost || t.dateline,
-      replies: parseInt(t.replies || '0', 10),
-      views: t.views,
-      pinned: parseInt(t.displayorder || '0', 10) > 0,
+      author: { name: asString(t.author), uid: asString(t.authorid) },
+      time: timeFromUnix(t.dblastpost) || asString(t.lastpost) || asString(t.dateline),
+      replies: asInt(t.replies),
+      views: t.views == null ? undefined : asString(t.views),
+      pinned: asInt(t.displayorder) > 0,
       excerpt,
-      hasImage: !!(t.attachmentImagePreviewList && t.attachmentImagePreviewList.length),
+      hasImage: asArray(t.attachmentImagePreviewList).length > 0,
     };
   });
-  const tpp = parseInt(v.tpp || '20', 10);
+  const tpp = asPositiveInt(v.tpp, 20);
+  const forum = asRecord(v.forum);
   const board = {
-    fid: v.forum?.fid || fid, name: v.forum?.name || '板块',
-    desc: stripHtml(v.forum?.description || ''),
-    rules: v.forum?.rules || '',
+    fid: asString(forum.fid, fid), name: asString(forum.name, '板块'),
+    desc: stripHtml(forum.description),
+    rules: asString(forum.rules),
   };
-  const curPage = parseInt(v.page || page, 10);
+  const curPage = asInt(v.page, page);
   const hasMore = raw.length >= tpp;
   // forum.threadcount 是「按当前筛选」返回的总主题数（无筛选时等于板块总数 forum.threads，
   // 选作品分类(typeid)/精华/热门 等会收窄时同步变小，已对线上 API 验证）→ 用它算总页数对所有
   // 筛选都准确；两者皆缺失时回退到「当前页 + 是否还有下一页」的渐进式判断。
-  const totalThreads = parseInt(v.forum?.threadcount || v.forum?.threads || '0', 10);
+  const totalThreads = asInt(forum.threadcount || forum.threads);
   const totalPages = totalThreads > 0 ? Math.max(1, Math.ceil(totalThreads / tpp)) : curPage + (hasMore ? 1 : 0);
   return { board, threads: list, pinned, types, subs, page: curPage, tpp, hasMore, totalPages, totalThreads };
 }
 
 // ===================== Thread (viewthread) =====================
 export async function getThread(tid: string, page: string | number = 1): Promise<ThreadData> {
-  const v = (await request('viewthread', { tid, page })).Variables || {};
-  const th = v.thread || {};
-  const currentPage = parseInt(String(page), 10);
-  const ppp = parseInt(v.ppp || '20', 10);
+  const v = variablesOf(await request('viewthread', { tid, page }));
+  const th = asRecord(v.thread);
+  const currentPage = asInt(page, 1);
+  const ppp = asPositiveInt(v.ppp, 20);
   // Page 1 may prepend a duplicate of the latest reply without `number`.
   // It belongs to a later page and must not interrupt the chronological list.
-  const numberedPosts = (v.postlist || []).filter((p: any) => p.number != null);
+  const numberedPosts = asArray(v.postlist).map(asRecord).filter((p: any) => p.number != null);
   const floors = numberedPosts.map((p: any, i: number) => ({
-    pid: p.pid,
-    floor: parseInt(p.number || p.position || ((currentPage - 1) * ppp + i + 1), 10),
+    pid: p.pid == null ? undefined : asString(p.pid),
+    floor: asInt(p.number || p.position, (currentPage - 1) * ppp + i + 1),
     op: p.first === '1',
-    user: { name: p.author, uid: p.authorid, group: '' },
-    time: timeFromUnix(p.dbdateline) || p.dateline,
-    blocks: parseMessage(p.message, p.attachments, p.imagelist),
+    user: { name: asString(p.author), uid: asString(p.authorid), group: '' },
+    time: timeFromUnix(p.dbdateline) || asString(p.dateline),
+    blocks: parseMessage(p.message, isRecord(p.attachments) ? p.attachments : null, asArray(p.imagelist).map((id) => asString(id))),
   }));
   const images: ThreadImage[] = [];
   floors.forEach((f: any) => f.blocks.forEach((b: any) => { if (b.t === 'img') images.push({ src: b.src, cap: b.cap }); }));
   const op = floors.find((f: any) => f.op) || floors[0] || { user: {}, time: '' };
   const thread = {
-    tid, fid: String(v.fid || th.fid || ''), title: stripHtml(th.subject || ''),
-    replies: parseInt(th.replies || '0', 10),
-    views: th.views,
-    pinned: parseInt(th.displayorder || '0', 10) > 0,
+    tid, fid: asString(v.fid || th.fid), title: stripHtml(th.subject),
+    replies: asInt(th.replies),
+    views: th.views == null ? undefined : asString(th.views),
+    pinned: asInt(th.displayorder) > 0,
     author: op.user,
     time: op.time,
   };
@@ -336,22 +398,23 @@ export async function getThread(tid: string, page: string | number = 1): Promise
 }
 
 export async function getReadingStream(tid: string, authorid: string, page = 1): Promise<ReadingStreamPage> {
-  const v = (await request('viewthread', { tid, authorid, page })).Variables || {};
-  const th = v.thread || {};
-  const ppp = parseInt(v.ppp || '20', 10);
-  const replies = parseInt(th.replies || '0', 10);
-  const posts = (v.postlist || []).filter((p: any) => p.number != null).map((p: any) => ({
-    pid: String(p.pid || ''),
-    number: parseInt(p.number || p.position || '0', 10),
-    pos: parseInt(p.position || p.number || '0', 10),
-    blocks: parseMessage(p.message, p.attachments, p.imagelist),
+  const v = variablesOf(await request('viewthread', { tid, authorid, page }));
+  const th = asRecord(v.thread);
+  const ppp = asPositiveInt(v.ppp, 20);
+  const replies = asInt(th.replies);
+  const postlist = asArray(v.postlist).map(asRecord);
+  const posts = postlist.filter((p: any) => p.number != null).map((p: any) => ({
+    pid: asString(p.pid),
+    number: asInt(p.number || p.position),
+    pos: asInt(p.position || p.number),
+    blocks: parseMessage(p.message, isRecord(p.attachments) ? p.attachments : null, asArray(p.imagelist).map((id) => asString(id))),
   }));
-  const op = (v.postlist || []).find((p: any) => p.first === '1') || (v.postlist || [])[0] || {};
+  const op = postlist.find((p: any) => p.first === '1') || postlist[0] || {};
   return {
     tid,
-    fid: String(v.fid || th.fid || ''),
+    fid: asString(v.fid || th.fid),
     title: stripHtml(th.subject || ''),
-    author: { name: op.author, uid: op.authorid },
+    author: { name: asString(op.author), uid: asString(op.authorid) },
     posts,
     page,
     ppp,
@@ -382,10 +445,10 @@ export async function getChapterComments(tid: string, pid: string, authorid: str
   const out: ReadingComment[] = [];
   let foundChapter = false;
   while (true) {
-    const v = (await request('viewthread', { tid, page })).Variables || {};
-    const posts = (v.postlist || []).filter((p: any) => p.number != null);
-    const ppp = parseInt(v.ppp || '20', 10);
-    const replies = parseInt(v.thread?.replies || '0', 10);
+    const v = variablesOf(await request('viewthread', { tid, page }));
+    const posts = asArray(v.postlist).map(asRecord).filter((p: any) => p.number != null);
+    const ppp = asPositiveInt(v.ppp, 20);
+    const replies = asInt(asRecord(v.thread).replies);
     const totalPages = Math.max(1, Math.ceil((replies + 1) / ppp));
     let start = 0;
     if (!foundChapter) {
@@ -398,9 +461,9 @@ export async function getChapterComments(tid: string, pid: string, authorid: str
       const p = posts[i];
       if (String(p.authorid) === authorid) return out;
       out.push({
-        id: String(p.pid || `${page}-${i}`),
-        user: { name: p.author, uid: p.authorid },
-        time: timeFromUnix(p.dbdateline) || p.dateline || '',
+        id: asString(p.pid, `${page}-${i}`),
+        user: { name: asString(p.author), uid: asString(p.authorid) },
+        time: timeFromUnix(p.dbdateline) || asString(p.dateline),
         text: stripHtml(p.message || ''),
       });
     }
@@ -414,25 +477,25 @@ const GENDER: Record<string, string> = { 1: '男', 2: '女' };
 export async function getProfile(uid?: string): Promise<{ user: UserProfile }> {
   const params: Record<string, any> = {};
   if (uid) params.uid = uid;
-  const v = (await request('profile', params)).Variables || {};
-  const s = v.space || {};
+  const v = variablesOf(await request('profile', params));
+  const s = asRecord(v.space);
   const user: UserProfile = {
-    id: s.uid, uid: s.uid, name: s.username,
-    avatar: (s.username || '?')[0],
+    id: asString(s.uid), uid: asString(s.uid), name: asString(s.username),
+    avatar: (asString(s.username, '?'))[0],
     group: groupTitleText(s.group) || '会员',
-    register: s.regdate ? s.regdate.split(' ')[0] + ' 加入' : '',
-    bio: stripHtml(s.bio || '') || '这位同好还没有填写简介。',
-    gender: GENDER[s.gender] || '保密',
-    constellation: s.constellation || '—',
-    location: [s.residecity].filter(Boolean).join(' ') || '—',
+    register: s.regdate ? asString(s.regdate).split(' ')[0] + ' 加入' : '',
+    bio: stripHtml(s.bio) || '这位同好还没有填写简介。',
+    gender: GENDER[asString(s.gender)] || '保密',
+    constellation: asString(s.constellation, '—'),
+    location: [asString(s.residecity)].filter(Boolean).join(' ') || '—',
     stats: {
-      themes: parseInt(s.threads || '0', 10),
-      replies: parseInt(s.posts || '0', 10),
-      collections: parseInt(s.favtimes || '0', 10),
-      follow: parseInt(s.following || '0', 10),
-      fans: parseInt(s.follower || '0', 10),
+      themes: asInt(s.threads),
+      replies: asInt(s.posts),
+      collections: asInt(s.favtimes),
+      follow: asInt(s.following),
+      fans: asInt(s.follower),
     },
-    credits: parseInt(s.credits || '0', 10),
+    credits: asInt(s.credits),
     self: s.self === '1',
   };
   return { user };
@@ -440,17 +503,17 @@ export async function getProfile(uid?: string): Promise<{ user: UserProfile }> {
 
 // ===================== Collections (myfavthread) =====================
 export async function getCollections(page = 1): Promise<ListResult<CollectionItem>> {
-  const v = (await request('myfavthread', { page })).Variables || {};
-  const list: CollectionItem[] = (v.list || []).filter((it: any) => it.idtype === 'tid').map((it: any) => ({
-    id: it.id, tid: it.id,
+  const v = variablesOf(await request('myfavthread', { page }));
+  const list: CollectionItem[] = asArray(v.list).map(asRecord).filter((it: any) => it.idtype === 'tid').map((it: any) => ({
+    id: asString(it.id), tid: asString(it.id),
     tag: '收藏',
     title: stripHtml(it.title),
-    author: { name: it.author },
+    author: { name: asString(it.author) },
     time: timeFromUnix(it.dateline),
-    replies: parseInt(it.replies || '0', 10),
+    replies: asInt(it.replies),
     excerpt: '',
   }));
-  return { list, count: parseInt(v.count || list.length, 10) };
+  return { list, count: asInt(v.count, list.length) };
 }
 
 // Own profile with the corrected 收藏 count: space.favtimes counts "favorited by
@@ -467,30 +530,30 @@ export async function getSelfProfile(): Promise<{ user: UserProfile }> {
 const NOTE_LABEL: Record<string, string> = { system: '系统通知', post: '回复提醒', pcomment: '点评提醒', at: '@ 提醒', friend: '好友', follow: '关注', card: '系统通知' };
 const NOTE_ICON: Record<string, string> = { system: 'info', post: 'reply', pcomment: 'reply', at: 'at', friend: 'users', follow: 'users' };
 export async function getReminders(page = 1): Promise<ListResult<Reminder>> {
-  const v = (await request('mynotelist', { page })).Variables || {};
-  const list: Reminder[] = (v.list || []).map((it: any) => ({
-    id: it.id,
-    type: it.type,
-    icon: NOTE_ICON[it.type] || 'bell',
+  const v = variablesOf(await request('mynotelist', { page }));
+  const list: Reminder[] = asArray(v.list).map(asRecord).map((it: any) => ({
+    id: asString(it.id),
+    type: asString(it.type),
+    icon: NOTE_ICON[asString(it.type)] || 'bell',
     unread: it.new === '1',
-    who: NOTE_LABEL[it.type] || '通知',
+    who: NOTE_LABEL[asString(it.type)] || '通知',
     text: stripHtml(it.note),
     time: timeFromUnix(it.dateline),
   }));
-  return { list, count: parseInt(v.count || list.length, 10) };
+  return { list, count: asInt(v.count, list.length) };
 }
 
 // ===================== Private messages (mypm) =====================
 export async function getPMs(page = 1): Promise<ListResult<PMItem>> {
-  const v = (await request('mypm', { page })).Variables || {};
-  const list: PMItem[] = (v.list || []).map((it: any) => ({
-    id: it.plid || it.pmid || it.touid,
-    user: { name: it.tousername || it.msgfromusername || it.author || '对话', uid: it.touid || it.msgfromid },
+  const v = variablesOf(await request('mypm', { page }));
+  const list: PMItem[] = asArray(v.list).map(asRecord).map((it: any) => ({
+    id: asString(it.plid || it.pmid || it.touid),
+    user: { name: asString(it.tousername || it.msgfromusername || it.author, '对话'), uid: asString(it.touid || it.msgfromid) },
     last: stripHtml(it.message || it.lastsummary || it.subject || ''),
     time: timeFromUnix(it.lastdateline || it.dateline),
-    unread: parseInt(it.isnew || it.new || '0', 10),
+    unread: asInt(it.isnew || it.new),
   }));
-  return { list, count: parseInt(v.count || list.length, 10) };
+  return { list, count: asInt(v.count, list.length) };
 }
 
 export { avatarUrl };

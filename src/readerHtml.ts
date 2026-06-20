@@ -1,5 +1,5 @@
 import { displayImageUrl } from './api';
-import type { Block, ReadingChapterType } from './types';
+import type { Block, ReadingChapterType, RichTextRun } from './types';
 import type { ReaderThemeKey } from './reading';
 import { isWeakChapter, READER_THEMES } from './reading';
 
@@ -16,6 +16,20 @@ function safeHref(value: string): string | null {
   return /^https?:\/\//i.test(value) ? value : null;
 }
 
+function richRunsHtml(runs: RichTextRun[]): string {
+  return runs.map((run) => {
+    const cls = [
+      run.bold ? 'b' : '',
+      run.tone === 'accent' ? 'accent' : run.tone === 'muted' ? 'muted' : '',
+      run.size === 'large' ? 'large' : run.size === 'small' ? 'small' : '',
+    ].filter(Boolean).join(' ');
+    const inner = esc(run.v).replace(/\n/g, '<br>');
+    const href = run.href ? safeHref(run.href) : null;
+    if (href) return `<a href="${esc(href)}" data-link="1" class="${esc(cls)}">${inner}</a>`;
+    return `<span class="${esc(cls)}">${inner}</span>`;
+  }).join('');
+}
+
 function blockHtml(block: Block, fontSize: number): string {
   if (block.t === 'text') {
     // 不少源帖用 &nbsp; 连写而非 <br> 分段，stripHtml 后表现为 2+ 连续空格 —— 视作段落分隔，
@@ -25,14 +39,35 @@ function blockHtml(block: Block, fontSize: number): string {
       return value ? `<p>${esc(value).replace(/\n/g, '<br>')}</p>` : '';
     }).join('');
   }
+  if (block.t === 'rich') {
+    return `<p>${richRunsHtml(block.runs)}</p>`;
+  }
   if (block.t === 'quote') {
-    return `<aside>${block.who ? `<strong>${esc(block.who)}</strong>` : ''}<div>${esc(block.v).replace(/\n/g, '<br>')}</div></aside>`;
+    const href = block.href ? safeHref(block.href) : null;
+    return `<aside>${block.who ? `<strong>${esc(block.who)}</strong>` : ''}<div>${esc(block.v).replace(/\n/g, '<br>')}</div>${href ? `<a href="${esc(href)}" data-link="1">查看原楼层</a>` : ''}</aside>`;
   }
   if (block.t === 'link') {
     const href = safeHref(block.href);
     return href
       ? `<p><a href="${esc(href)}" data-link="1">${esc(block.v)} <span>↗</span></a></p>`
       : `<p>${esc(block.v)}</p>`;
+  }
+  if (block.t === 'notice') {
+    return `<aside><strong>${block.kind === 'hidden' ? '隐藏内容' : '折叠内容'}</strong><div>${esc(block.v)}</div></aside>`;
+  }
+  if (block.t === 'attachment') {
+    const href = block.href ? safeHref(block.href) : null;
+    const label = `${block.name}${block.size ? ` · ${block.size}` : ''}`;
+    return href
+      ? `<p><a href="${esc(href)}" data-link="1">附件 · ${esc(label)} <span>↗</span></a></p>`
+      : `<p>附件 · ${esc(label)}</p>`;
+  }
+  if (block.t === 'table') {
+    const rows = block.rows.map((row, rowIndex) => `<tr>${row.map((cell) => {
+      const tag = rowIndex === 0 ? 'th' : 'td';
+      return `<${tag}>${esc(cell)}</${tag}>`;
+    }).join('')}</tr>`).join('');
+    return `<div class="table-wrap"><table>${rows}</table></div>`;
   }
   const src = displayImageUrl(block.src);
   if (!src) {
@@ -86,6 +121,10 @@ body{font-family:"Noto Serif SC","Songti SC",Georgia,serif}
 aside{border-left:2px solid ${T.accent};padding:4px 0 4px 14px;margin:6px 0 1em;color:${T.soft};font-size:${options.fontSize - 2}px;line-height:1.75}
 aside strong{display:block;color:${T.accent};font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:${options.fontSize - 5}px;margin-bottom:5px}
 a{color:${T.accent};text-underline-offset:3px}
+.b{font-weight:700}.accent{color:${T.accent}}.muted{color:${T.soft}}.small{font-size:${options.fontSize - 3}px}.large{font-size:${options.fontSize + 2}px}
+.table-wrap{width:100%;overflow:hidden;margin:2px 0 1.1em;border:1px solid ${T.line};border-radius:10px;background:${T.chrome}}
+table{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:${options.fontSize - 5}px;line-height:1.55}
+th,td{border-top:1px solid ${T.line};border-left:1px solid ${T.line};padding:7px 8px;vertical-align:top;text-align:left}tr:first-child th,tr:first-child td{border-top:0}th:first-child,td:first-child{border-left:0}th{color:${T.ink};font-weight:700;background:${T.bg}}td{color:${T.soft}}
 .image{display:block;width:100%;padding:0;border:0;background:${T.chrome};border-radius:10px;overflow:hidden;margin:4px 0 1.1em}
 .image img{display:block;width:100%;height:auto;max-height:54vh;object-fit:contain}
 .placeholder{height:200px;color:${T.soft};background:repeating-linear-gradient(135deg,${T.line} 0 9px,transparent 9px 18px),${T.chrome}}

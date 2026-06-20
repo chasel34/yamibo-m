@@ -86,11 +86,23 @@ export interface BoardData {
 }
 
 // ---- Thread (viewthread) ----
+export interface RichTextRun {
+  v: string;
+  href?: string;
+  bold?: boolean;
+  tone?: 'accent' | 'muted';
+  size?: 'small' | 'large';
+}
+
 export type Block =
   | { t: 'text'; v: string }
+  | { t: 'rich'; runs: RichTextRun[] }
   | { t: 'link'; v: string; href: string }
   | { t: 'img'; src: string | null; cap: string; width?: number; height?: number }
-  | { t: 'quote'; who: string; v: string };
+  | { t: 'quote'; who: string; v: string; href?: string }
+  | { t: 'notice'; v: string; kind: 'hidden' | 'collapse' }
+  | { t: 'attachment'; name: string; href: string | null; size?: string }
+  | { t: 'table'; rows: string[][] };
 
 export interface Floor {
   pid?: string;

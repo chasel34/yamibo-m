@@ -116,7 +116,10 @@ function normalizeTitle(value: string): string {
 
 function blockText(blocks: Block[]): string {
   return blocks.map((block) => {
-    if (block.t === 'text' || block.t === 'link' || block.t === 'quote') return block.v;
+    if (block.t === 'text' || block.t === 'link' || block.t === 'quote' || block.t === 'notice') return block.v;
+    if (block.t === 'rich') return block.runs.map((run) => run.v).join('');
+    if (block.t === 'table') return block.rows.map((row) => row.join(' ')).join('\n');
+    if (block.t === 'attachment') return block.name;
     return block.cap || '';
   }).join('\n').replace(/\u00a0/g, ' ');
 }
@@ -124,8 +127,11 @@ function blockText(blocks: Block[]): string {
 function nonEmptyBlocks(blocks: Block[]): Block[] {
   return blocks.filter((block) => {
     if (block.t === 'img') return !!block.src || !!block.cap;
+    if (block.t === 'attachment') return !!normalizeTitle(block.name) || !!block.href;
     if (block.t === 'link') return !!normalizeTitle(block.v) || !!block.href;
-    if (block.t === 'quote') return !!normalizeTitle(block.v);
+    if (block.t === 'rich') return block.runs.some((run) => !!normalizeTitle(run.v) || !!run.href);
+    if (block.t === 'table') return block.rows.some((row) => row.some((cell) => !!normalizeTitle(cell)));
+    if (block.t === 'quote' || block.t === 'notice') return !!normalizeTitle(block.v);
     return !!normalizeTitle(block.v);
   });
 }
@@ -147,12 +153,18 @@ function readingPageHash(page?: ReadingStreamPage): string | undefined {
 function chapterLinks(blocks: Block[]): ReadingChapterIndex[] {
   const seen = new Set<string>();
   return blocks.flatMap((block) => {
-    if (block.t !== 'link') return [];
-    const pid = pidFromHref(block.href);
-    const title = normalizeTitle(block.v);
-    if (!pid || seen.has(pid) || !looksLikeChapterTitle(title)) return [];
-    seen.add(pid);
-    return [{ id: pid, pid, no: seen.size, title, type: 'chapter', confidence: 'high' }];
+    const links = block.t === 'link'
+      ? [{ href: block.href, title: block.v }]
+      : block.t === 'rich'
+        ? block.runs.filter((run) => !!run.href).map((run) => ({ href: run.href || '', title: run.v }))
+        : [];
+    return links.flatMap((link) => {
+      const pid = pidFromHref(link.href);
+      const title = normalizeTitle(link.title);
+      if (!pid || seen.has(pid) || !looksLikeChapterTitle(title)) return [];
+      seen.add(pid);
+      return [{ id: pid, pid, no: seen.size, title, type: 'chapter', confidence: 'high' }];
+    });
   });
 }
 
@@ -184,8 +196,9 @@ function parsePlainToc(blocks: Block[]): string[] {
 function chapterTitleFromBlocks(blocks: Block[]): string | null {
   let scanned = 0;
   for (const block of blocks) {
-    if (block.t !== 'text') continue;
-    const lines = block.v.split(/\n+|[ 　]{3,}/).map(normalizeTitle).filter(Boolean);
+    if (block.t !== 'text' && block.t !== 'rich') continue;
+    const text = block.t === 'text' ? block.v : block.runs.map((run) => run.v).join('');
+    const lines = text.split(/\n+|[ 　]{3,}/).map(normalizeTitle).filter(Boolean);
     for (const line of lines) {
       scanned += 1;
       if (/^(?:本帖最后由|本帖最後由|编辑|編輯|授权|授權|转载|轉載|译者|譯者|warning|避雷)/i.test(line)) continue;
@@ -238,7 +251,7 @@ function isStrongExclude(blocks: Block[]): boolean {
   const text = normalizeTitle(blockText(ready));
   if (!text && ready.every((block) => block.t !== 'img')) return true;
   if (/^(?:占楼|佔樓|占坑|待补|待補|mark|顶|頂)[。.!！\s]*$/i.test(text)) return true;
-  if (ready.length <= 2 && ready.every((block) => block.t === 'link') && text.length < 40) return true;
+  if (ready.length <= 2 && ready.every((block) => block.t === 'link' || (block.t === 'rich' && block.runs.every((run) => !!run.href))) && text.length < 40) return true;
   return false;
 }
 
@@ -440,8 +453,9 @@ export function stripLeadingChapterTitle(blocks: Block[], title: string): Block[
   let removed = false;
   const titleRe = titlePrefixRe(title);
   return blocks.flatMap((block) => {
-    if (removed || block.t !== 'text') return [block];
-    const lines = block.v.split('\n');
+    if (removed || (block.t !== 'text' && block.t !== 'rich')) return [block];
+    const rawText = block.t === 'text' ? block.v : block.runs.map((run) => run.v).join('');
+    const lines = rawText.split('\n');
     const index = lines.findIndex((line) => normalizeTitle(line) !== '');
     if (index < 0) return [block];
     const raw = lines[index];
@@ -452,7 +466,9 @@ export function stripLeadingChapterTitle(blocks: Block[], title: string): Block[
     if (rest.trim()) lines[index] = rest;
     else lines.splice(index, 1);
     const v = lines.join('\n').trim();
-    return v ? [{ ...block, v }] : [];
+    if (!v) return [];
+    if (block.t === 'text') return [{ ...block, v }];
+    return [{ t: 'rich', runs: [{ v }] }];
   });
 }
 

@@ -9,6 +9,7 @@ import Icon from '../components/Icon';
 import ReaderSurface from '../components/ReaderSurface';
 import { createReaderHtml } from '../readerHtml';
 import { getChapterComments, getReadingStream, resolvePostPage } from '../api';
+import { parseForumLink } from '../forumLinks';
 import {
   buildCompleteIndex, buildTocReadyIndex, clearReadingIndex, getReaderSettings,
   getReadingIndex, getReadingProgress, hasReliableLinkedToc, isWeakChapter, LITERATURE_FIDS,
@@ -373,9 +374,16 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     } else if (msg.type === 'link') {
       const href = String(msg.href || '');
       if (!/^https?:\/\//i.test(href)) return;
-      const match = href.match(/[?&](?:tid|ptid)=(\d+)/);
-      if (/^https?:\/\/bbs\.yamibo\.com\//i.test(href) && match) nav.push('thread', { tid: match[1] });
-      else Linking.openURL(href).catch(() => nav.toast('无法打开这个链接'));
+      const target = parseForumLink(href);
+      if (target?.kind === 'thread') {
+        nav.push('thread', { tid: target.tid, targetPid: target.pid, targetPage: target.page });
+      } else if (target?.kind === 'board') {
+        nav.push('board', { fid: target.fid });
+      } else if (target?.kind === 'profile') {
+        nav.push('profile', { uid: target.uid });
+      } else {
+        Linking.openURL(href).catch(() => nav.toast('无法打开这个链接'));
+      }
     }
   }, [book, chapter, chapterIdx, jumpChapter, nav, openComments, viewOriginalFloor]);
 

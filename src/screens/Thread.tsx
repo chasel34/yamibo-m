@@ -9,14 +9,59 @@ import { Loader, ErrorView } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
 import { getThread, resolvePostPage } from '../api';
+import { parseForumLink } from '../forumLinks';
 import { recordThread } from '../history';
 import { LITERATURE_FIDS } from '../reading';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { Block, Floor as FloorType, ThreadData, ThreadImage, ThreadNavParam, RootStackParamList } from '../types';
+import type { Block, Floor as FloorType, RichTextRun, ThreadData, ThreadImage, ThreadNavParam, RootStackParamList } from '../types';
+
+function RichText({ runs, onLink }: { runs: RichTextRun[]; onLink?: (href: string) => void }) {
+  const { t } = useTheme();
+  return (
+    <Text style={{ fontFamily: FONTS.body, fontSize: 16, marginBottom: 12, color: t.ink2, lineHeight: 27.5 }}>
+      {runs.map((run, index) => (
+        <Text
+          key={index}
+          accessibilityRole={run.href ? 'link' : undefined}
+          onPress={run.href ? () => onLink && onLink(run.href || '') : undefined}
+          style={{
+            color: run.href ? t.accentInk : run.tone === 'accent' ? t.accentInk : run.tone === 'muted' ? t.muted : t.ink2,
+            fontFamily: run.bold ? FONTS.head : FONTS.body,
+            fontWeight: run.bold ? '700' : '400',
+            fontSize: run.size === 'large' ? 18 : run.size === 'small' ? 13.5 : 16,
+            textDecorationLine: run.href ? 'underline' : 'none',
+          }}
+        >
+          {run.v}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+function TableBlock({ rows }: { rows: string[][] }) {
+  const { t } = useTheme();
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+      <View style={{ borderWidth: 1, borderColor: t.line, borderRadius: 8, overflow: 'hidden', minWidth: 260 }}>
+        {rows.map((row, rowIndex) => (
+          <View key={rowIndex} style={{ flexDirection: 'row', backgroundColor: rowIndex === 0 ? t.card : 'transparent', borderTopWidth: rowIndex === 0 ? 0 : 1, borderTopColor: t.line }}>
+            {row.map((cell, cellIndex) => (
+              <View key={cellIndex} style={{ minWidth: 96, maxWidth: 190, paddingVertical: 8, paddingHorizontal: 10, borderLeftWidth: cellIndex === 0 ? 0 : 1, borderLeftColor: t.line }}>
+                <Text style={{ fontFamily: rowIndex === 0 ? FONTS.head : FONTS.body, fontSize: 13, fontWeight: rowIndex === 0 ? '700' : '400', color: rowIndex === 0 ? t.ink : t.ink2, lineHeight: 19 }}>{cell}</Text>
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
 
 function FloorBlock({ b, onImg, onLink }: { b: Block; onImg?: (src: string | null) => void; onLink?: (href: string) => void }) {
   const { t } = useTheme();
   if (b.t === 'text') return <Text style={{ fontFamily: FONTS.body, fontSize: 16, marginBottom: 12, color: t.ink2, lineHeight: 27.5 }}>{b.v}</Text>;
+  if (b.t === 'rich') return <RichText runs={b.runs} onLink={onLink} />;
   if (b.t === 'link') return (
     <Text
       accessibilityRole="link"
@@ -30,8 +75,30 @@ function FloorBlock({ b, onImg, onLink }: { b: Block; onImg?: (src: string | nul
     <View style={{ borderLeftWidth: 2, borderLeftColor: t.lineStrong, paddingLeft: 14, paddingVertical: 2, marginVertical: 12 }}>
       {b.who ? <Text style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.muted, marginBottom: 4 }}>{b.who} 写道</Text> : null}
       <Text style={{ fontFamily: FONTS.body, fontSize: 14, color: t.muted }}>{b.v}</Text>
+      {b.href ? (
+        <Text accessibilityRole="link" onPress={() => onLink && onLink(b.href || '')} style={{ fontFamily: FONTS.head, fontSize: 12, fontWeight: '600', color: t.accentInk, marginTop: 6 }}>
+          查看原楼层
+        </Text>
+      ) : null}
     </View>
   );
+  if (b.t === 'notice') return (
+    <View style={{ borderRadius: 12, backgroundColor: t.card, borderWidth: 1, borderColor: t.line, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 12 }}>
+      <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, fontWeight: '600', color: t.muted }}>{b.kind === 'hidden' ? '隐藏内容' : '折叠内容'}</Text>
+      <Text style={{ fontFamily: FONTS.body, fontSize: 13.5, color: t.muted, lineHeight: 21, marginTop: 3 }}>{b.v}</Text>
+    </View>
+  );
+  if (b.t === 'attachment') return (
+    <Pressable
+      disabled={!b.href}
+      onPress={() => b.href && onLink && onLink(b.href)}
+      style={{ borderRadius: 12, borderWidth: 1, borderColor: t.line, backgroundColor: t.card, paddingVertical: 11, paddingHorizontal: 12, marginBottom: 12 }}
+    >
+      <Text style={{ fontFamily: FONTS.head, fontSize: 14, fontWeight: '700', color: b.href ? t.accentInk : t.muted }}>附件 · {b.name}</Text>
+      <Text style={{ fontFamily: FONTS.body, fontSize: 12.5, color: t.muted, marginTop: 4 }}>{b.href ? `${b.size ? `${b.size} · ` : ''}点按打开` : '暂无可用下载地址'}</Text>
+    </Pressable>
+  );
+  if (b.t === 'table') return <TableBlock rows={b.rows} />;
   if (b.t === 'img') return <RemoteImage src={b.src} cap={b.cap} width={b.width} height={b.height} onPress={() => onImg && onImg(b.src)} />;
   return null;
 }
@@ -234,9 +301,21 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
     nav.openViewer(imgs, idx, thread.title);
   };
   const openLink = async (href: string) => {
-    const threadMatch = href.match(/[?&](?:tid|ptid)=(\d+)/);
-    if (/^https?:\/\/bbs\.yamibo\.com\//i.test(href) && threadMatch) {
-      nav.push('thread', { thread: { tid: threadMatch[1], title: '帖子' } });
+    const target = parseForumLink(href);
+    if (target?.kind === 'thread') {
+      nav.push('thread', {
+        thread: { tid: target.tid, title: '帖子' },
+        targetPid: target.pid,
+        targetPage: target.page,
+      });
+      return;
+    }
+    if (target?.kind === 'board') {
+      nav.push('board', { fid: target.fid });
+      return;
+    }
+    if (target?.kind === 'profile') {
+      nav.push('profile', { uid: target.uid });
       return;
     }
     try {

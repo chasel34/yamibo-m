@@ -28,7 +28,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "proxy": "node tools/proxy.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:richtext": "node scripts/verify-richtext.mjs"
   },
   "private": true,
   "devDependencies": {
