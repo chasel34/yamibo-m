@@ -166,6 +166,32 @@ function FloorJump({ onLocate }: { onLocate: (f: number) => void }) {
   );
 }
 
+function OpOnlyPill({ active, disabled, onPress }: { active: boolean; disabled?: boolean; onPress: () => void }) {
+  const { t } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => ({
+        height: 40,
+        paddingHorizontal: 15,
+        borderRadius: 999,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        backgroundColor: active ? t.accent : t.card2,
+        opacity: disabled ? 0.55 : pressed ? 0.72 : 1,
+        transform: [{ scale: pressed && !disabled ? 0.96 : 1 }],
+      })}
+    >
+      <Icon name={active ? 'check' : 'user'} size={14} color={active ? t.onAccent : t.inkSoft} />
+      <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, fontWeight: '600', color: active ? t.onAccent : t.inkSoft }}>
+        只看楼主
+      </Text>
+    </Pressable>
+  );
+}
+
 function routeTid(route: any): string {
   return String(route?.params?.tid || route?.params?.thread?.tid || route?.params?.thread?.id || '');
 }
@@ -184,6 +210,7 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
   const [page, setPage] = React.useState(1);
   const [totalPages, setTotalPages] = React.useState(1);
   const [paging, setPaging] = React.useState(false);
+  const [opOnly, setOpOnly] = React.useState(false);
   const [flash, setFlash] = React.useState<number | null>(null);
   const scRef = React.useRef<ScrollView>(null);
   const floorY = React.useRef<Map<number, number>>(new Map());
@@ -222,6 +249,7 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
 
   const load = React.useCallback(async () => {
     setError(null);
+    setOpOnly(false);
     try {
       const firstPage = targetPage || (targetPid ? await resolvePostPage(tid, targetPid) : 1);
       if (targetPid) {
@@ -242,13 +270,19 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
 
   React.useEffect(() => { load(); }, [load]);
 
-  const fetchPage = async (n: number) => {
+  const fetchPage = async (n: number, only = opOnly) => {
     if (paging) return;
+    const authorid = only ? (data?.thread.author?.uid || paramThread.author?.uid) : undefined;
+    if (only && !authorid) {
+      nav.toast('无法识别楼主，暂时不能只看楼主');
+      return;
+    }
     setPaging(true);
     floorY.current.clear();
     try {
-      const d = await getThread(tid, n);
-      setData((prev) => (prev ? { ...prev, floors: d.floors, images: d.images, page: d.page, hasMore: d.hasMore, totalPages: d.totalPages } : d));
+      const d = await getThread(tid, n, authorid);
+      setData(d);
+      setOpOnly(only);
       setPage(n);
       setTotalPages(d.totalPages);
     } catch (e) {
@@ -258,6 +292,12 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
     }
   };
   const goPage = (n: number) => { pending.current = null; if (n !== page) fetchPage(n); };
+  const toggleOpOnly = () => {
+    const next = !opOnly;
+    pending.current = null;
+    targetHandled.current = true;
+    fetchPage(1, next);
+  };
 
   const scrollToFloor = (f: number, smooth: boolean) => {
     const run = () => {
@@ -329,7 +369,8 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
   const floors = data?.floors || [];
   const ppp = data?.ppp || 20;
   const totalFloors = (data?.thread.replies || 0) + 1;
-  const showOP = !!floors[0]?.op;                 // 楼主仅第一页
+  const canOpOnly = opOnly || (!!data?.thread.author?.uid && totalFloors > 1);
+  const showOP = !opOnly && !!floors[0]?.op;      // 普通模式下楼主仅第一页
   const replyFloors = showOP ? floors.slice(1) : floors;
   // 文学区（小说/翻译）帖子一律提供阅读模式入口，只需楼主 uid 可做 authorid 过滤。
   const readingCandidate = !!data
@@ -343,9 +384,14 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
   return (
     <Screen>
       <NavHeader title="" onBack={goBack}
-        right={readingCandidate
-          ? <Pressable onPress={() => openReader()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}><Icon name="book" size={18} color="#fff" /></Pressable>
-          : <NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>} />
+        right={(
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {data && canOpOnly ? <OpOnlyPill active={opOnly} disabled={paging} onPress={toggleOpOnly} /> : null}
+            {readingCandidate
+              ? <Pressable onPress={() => openReader()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}><Icon name="book" size={18} color={t.onAccent} /></Pressable>
+              : <NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>}
+          </View>
+        )} />
 
       {error ? <ErrorView message={error} onRetry={load} />
         : !data ? <Loader label="加载帖子…" />
@@ -385,11 +431,11 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
               </View>
             ) : null}
             {/* replies */}
-            <Kicker style={{ paddingTop: 16, paddingHorizontal: 22 }}>{thread.replies} 条回复</Kicker>
+            <Kicker style={{ paddingTop: 16, paddingHorizontal: 22 }}>{opOnly ? `楼主发言 · ${totalFloors} 层` : `${thread.replies} 条回复`}</Kicker>
             <Divider style={{ marginTop: 14 }} />
             {replyFloors.length === 0 ? (
               <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 13, color: t.muted, paddingVertical: 30 }}>
-                {totalFloors <= 1 ? '还没有回复，来抢沙发吧' : '本页暂无回复'}
+                {opOnly ? '本页暂无楼主发言' : totalFloors <= 1 ? '还没有回复，来抢沙发吧' : '本页暂无回复'}
               </Text>
             ) : replyFloors.map((f, i) => (
               <View key={f.pid || f.floor} onLayout={(e: LayoutChangeEvent) => floorY.current.set(f.floor, e.nativeEvent.layout.y)}>
@@ -405,8 +451,8 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
                 page={page}
                 totalPages={totalPages}
                 onJump={goPage}
-                cap={`共 ${totalFloors} 楼 · 每页 ${ppp} 楼`}
-                extra={totalFloors > ppp ? <FloorJump onLocate={locate} /> : null}
+                cap={opOnly ? `仅显示楼主 · 共 ${totalFloors} 层` : `共 ${totalFloors} 楼 · 每页 ${ppp} 楼`}
+                extra={!opOnly && totalFloors > ppp ? <FloorJump onLocate={locate} /> : null}
               />
             </View>
             <View style={{ height: 8 }} />

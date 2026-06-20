@@ -366,8 +366,10 @@ export async function getBoard(fid: string, page = 1, typeid: string | number = 
 }
 
 // ===================== Thread (viewthread) =====================
-export async function getThread(tid: string, page: string | number = 1): Promise<ThreadData> {
-  const v = variablesOf(await request('viewthread', { tid, page }));
+export async function getThread(tid: string, page: string | number = 1, authorid?: string): Promise<ThreadData> {
+  const params: Record<string, any> = { tid, page };
+  if (authorid) params.authorid = authorid;
+  const v = variablesOf(await request('viewthread', params));
   const th = asRecord(v.thread);
   const currentPage = asInt(page, 1);
   const ppp = asPositiveInt(v.ppp, 20);
@@ -385,13 +387,20 @@ export async function getThread(tid: string, page: string | number = 1): Promise
   const images: ThreadImage[] = [];
   floors.forEach((f: any) => f.blocks.forEach((b: any) => { if (b.t === 'img') images.push({ src: b.src, cap: b.cap }); }));
   const op = floors.find((f: any) => f.op) || floors[0] || { user: {}, time: '' };
+  const author = {
+    name: asString(th.author || th.username, op.user.name),
+    uid: asString(th.authorid, op.user.uid),
+    group: op.user.group || '',
+  };
+  const threadDateline = asString(th.dateline);
+  const threadTime = timeFromUnix(th.dbdateline || (/^\d+$/.test(threadDateline) ? threadDateline : null)) || threadDateline || op.time;
   const thread = {
     tid, fid: asString(v.fid || th.fid), title: stripHtml(th.subject),
     replies: asInt(th.replies),
     views: th.views == null ? undefined : asString(th.views),
     pinned: asInt(th.displayorder) > 0,
-    author: op.user,
-    time: op.time,
+    author,
+    time: threadTime,
   };
   const totalPages = Math.max(1, Math.ceil((thread.replies + 1) / ppp));
   return { thread, floors, images, ppp, page: currentPage, hasMore: currentPage < totalPages, totalPages };

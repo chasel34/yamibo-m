@@ -132,17 +132,21 @@ const ThreadScreen = ({thread, board}) => {
   const isNovel = !!(thread.novelId && window.BOOKS && window.BOOKS.get(thread.novelId));
   const all = React.useMemo(()=> D.floorsFor(thread), [thread]);   // all[0] = 1楼(楼主)
   const totalFloors = all.length;
-  const totalPages = Math.max(1, Math.ceil(totalFloors/PER_FLOOR));
+  const [opOnly, setOpOnly] = React.useState(false);              // 只看楼主
+  const opCount = React.useMemo(()=> all.filter(f=>f.op).length, [all]);
+  const source = React.useMemo(()=> opOnly ? all.filter(f=>f.op) : all, [all, opOnly]);
+  const totalPages = Math.max(1, Math.ceil(source.length/PER_FLOOR));
   const [page, setPage] = React.useState(1);
   const pageC = Math.min(page, totalPages);
   const scRef = React.useRef(null);
   const pending = React.useRef(null);
   const [flash, setFlash] = React.useState(null);
 
-  const startFloor = (pageC-1)*PER_FLOOR + 1;
-  const endFloor = Math.min(pageC*PER_FLOOR, totalFloors);
-  const showOP = startFloor===1;                          // 楼主仅第一页
-  const pageFloors = all.slice(startFloor-1, endFloor);   // 含楼主（第一页）
+  React.useEffect(()=>{ setPage(1); }, [opOnly]);
+
+  const startIdx = (pageC-1)*PER_FLOOR;
+  const pageFloors = source.slice(startIdx, startIdx+PER_FLOOR);   // 本页楼层
+  const showOP = !opOnly && startIdx===0;                          // 普通模式下楼主正文仅第一页
   const replyFloors = showOP ? pageFloors.slice(1) : pageFloors;
 
   // 图片查看器：仅本页可见楼层
@@ -182,9 +186,18 @@ const ThreadScreen = ({thread, board}) => {
     <>
       <SB/>
       <NH title="" onBack={nav.pop}
-        right={isNovel
-          ? <div className="navback" style={{background:"var(--accent)", color:"#fff"}} onClick={()=>nav.push("reader",{bookId:thread.novelId})}><Ic name="book" size={18}/></div>
-          : <div className="navback" onClick={()=>nav.toast("分享：敬请期待")}><Ic name="share" size={18}/></div>}/>
+        right={
+          <div className="row" style={{gap:8}}>
+            {totalFloors>1 && (
+              <div className={"pill "+(opOnly?"pill-active":"pill-ghost")} style={{height:40, padding:"0 15px"}} onClick={()=>setOpOnly(v=>!v)}>
+                <Ic name={opOnly?"check":"user"} size={14}/>只看楼主
+              </div>
+            )}
+            {isNovel
+              ? <div className="navback" style={{background:"var(--accent)", color:"#fff"}} onClick={()=>nav.push("reader",{bookId:thread.novelId})}><Ic name="book" size={18}/></div>
+              : <div className="navback" onClick={()=>nav.toast("分享：敬请期待")}><Ic name="share" size={18}/></div>}
+          </div>
+        }/>
       <div className="scroll" ref={scRef} style={{paddingBottom:8}}>
         {/* title block */}
         <div style={{padding:"2px 22px 18px"}}>
@@ -221,14 +234,14 @@ const ThreadScreen = ({thread, board}) => {
         )}
 
         {/* replies header */}
-        <div className="row" style={{padding:"16px 22px 0", justifyContent:"flex-start", alignItems:"center"}}>
-          <span className="kicker">{thread.replies} 条回复</span>
+        <div className="row" style={{padding:"16px 22px 0", alignItems:"center"}}>
+          <span className="kicker">{opOnly ? ("楼主发言 · "+source.length+" 层") : (thread.replies+" 条回复")}</span>
         </div>
         <div className="feed-div" style={{margin:"14px 22px 0"}}></div>
 
         {/* replies on this page */}
         {replyFloors.length===0 && (
-          <div className="serif" style={{textAlign:"center", fontSize:13, color:"var(--faint)", padding:"30px 22px"}}>本页暂无回复</div>
+          <div className="serif" style={{textAlign:"center", fontSize:13, color:"var(--faint)", padding:"30px 22px"}}>{opOnly?"本页暂无楼主发言":"本页暂无回复"}</div>
         )}
         {replyFloors.map((f,i)=>(
           <React.Fragment key={f.floor}>
@@ -241,8 +254,8 @@ const ThreadScreen = ({thread, board}) => {
 
         {/* pager (含按楼层定位) */}
         <Pg page={pageC} totalPages={totalPages} onJump={goPage}
-          cap={"共 "+totalFloors+" 楼 · 每页 "+PER_FLOOR+" 楼"}
-          extra={totalFloors>PER_FLOOR ? <FloorJump onLocate={locate}/> : null}/>
+          cap={opOnly ? ("仅显示楼主 · 共 "+source.length+" 层") : ("共 "+totalFloors+" 楼 · 每页 "+PER_FLOOR+" 楼")}
+          extra={!opOnly && totalFloors>PER_FLOOR ? <FloorJump onLocate={locate}/> : null}/>
         <div style={{height:8}}></div>
       </div>
       {/* fixed action bar — v1 read only */}

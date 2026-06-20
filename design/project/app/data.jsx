@@ -332,15 +332,25 @@ window.DATA = (function(){
     ];
     return V[i % V.length];
   }
+  function _opReplyBlocks(i){
+    const V = [
+      [{t:"text", v:"楼主回来统一回复一下：谢谢大家的支持，看到这么多人喜欢真的很开心～"}],
+      [{t:"text", v:"补充一点：前面有同学问到的设定，原帖第二段其实有说明，可以翻回去看看。"}],
+      [{t:"text", v:"已经记下大家的建议了，下一话会注意节奏，感谢各位的耐心指正！"}],
+      [{t:"text", v:"楼主冒个泡：评论区好热闹，我都一条条看了，抱抱每一位。"}],
+    ];
+    return V[Math.floor(i/6) % V.length];
+  }
   function floorsFor(thread){
     const N = Math.min(thread.replies || 0, 360);  // 上限保护
     const arr = [ _opFloor(thread) ];
     for(let i=0;i<N;i++){
+      const opReply = N>=6 && (i+1)%6===0;          // 楼主穿插回帖
       arr.push({
-        floor: i+2, op:false,
-        user: _uarr[(i+1) % _uarr.length],
+        floor: i+2, op:opReply,
+        user: opReply ? thread.author : _uarr[(i+1) % _uarr.length],
         time: _rtimes[i % _rtimes.length],
-        blocks: _replyBlocks(i, thread),
+        blocks: opReply ? _opReplyBlocks(i) : _replyBlocks(i, thread),
       });
     }
     return arr;
