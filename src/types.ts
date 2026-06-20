@@ -270,6 +270,7 @@ export interface UserProfile {
 export interface CollectionItem {
   id: string;
   tid: string;
+  favid?: string;
   tag: string;
   title: string;
   author: { name?: string };

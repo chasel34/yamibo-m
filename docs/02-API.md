@@ -224,6 +224,25 @@ GET ?version=4&module=myfavthread[&page=1]
 ```
 另有 `count`、`perpage`。
 
+### 3.2.1 收藏 / 取消收藏
+新增收藏走移动 API：
+```
+POST ?version=4&module=favthread&id=<tid>&idtype=tid&formhash=<hash>
+```
+
+成功：`Message.messageval = "favorite_do_success"`；重复收藏：
+`Message.messageval = "favorite_repeat"`，可视为已收藏。
+
+取消收藏实测移动 API 参数组合不稳定，使用标准网页表单接口：
+```
+POST /home.php?mod=spacecp&ac=favorite&op=delete&favid=<favid>
+Content-Type: application/x-www-form-urlencoded
+
+deletesubmit=true&formhash=<hash>
+```
+
+成功返回 HTML，正文包含 `操作成功`。`favid` 来自 `myfavthread` 的收藏列表项。
+
 ### 3.3 我的主题/回复 — `mythread`
 ```
 GET ?version=4&module=mythread&view=thread   // 我的主题

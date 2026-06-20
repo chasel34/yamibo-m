@@ -134,11 +134,15 @@ function messageCode(message?: any): string {
   return String(message?.messageval || '');
 }
 
+const SUCCESS_MESSAGES = new Set(['login_succeed', 'logout_succeed', 'favorite_do_success', 'favorite_repeat']);
+
 function businessMessage(val: string, text: string): string {
   const raw = `${val} ${text}`;
   if (/space_does_not_exist/i.test(raw)) return '用户不存在或资料不可见';
   if (/thread_nonexistence/i.test(raw)) return '帖子不存在或已被删除';
   if (/forum_nonexistence/i.test(raw)) return '板块不存在或不可访问';
+  if (/favorite_cannot_favorite/i.test(raw)) return '暂时无法收藏这个帖子';
+  if (/favorite_does_not_exist/i.test(raw)) return '这个收藏已经不存在';
   if (/undefined_action|not_found/i.test(raw)) return '请求的内容不存在';
 
   const clean = stripHtml(text);
@@ -148,7 +152,7 @@ function businessMessage(val: string, text: string): string {
 
 function classifyMessage(module: string, message?: any): ApiError | null {
   const val = messageCode(message);
-  if (!val || val === 'login_succeed' || val === 'logout_succeed') return null;
+  if (!val || SUCCESS_MESSAGES.has(val)) return null;
 
   const text = messageText(message);
   const raw = `${val} ${text}`;
@@ -514,7 +518,7 @@ export async function getProfile(uid?: string): Promise<{ user: UserProfile }> {
 export async function getCollections(page = 1): Promise<ListResult<CollectionItem>> {
   const v = variablesOf(await request('myfavthread', { page }));
   const list: CollectionItem[] = asArray(v.list).map(asRecord).filter((it: any) => it.idtype === 'tid').map((it: any) => ({
-    id: asString(it.id), tid: asString(it.id),
+    id: asString(it.id), tid: asString(it.id), favid: asString(it.favid) || undefined,
     tag: '收藏',
     title: stripHtml(it.title),
     author: { name: asString(it.author) },
@@ -523,6 +527,79 @@ export async function getCollections(page = 1): Promise<ListResult<CollectionIte
     excerpt: '',
   }));
   return { list, count: asInt(v.count, list.length) };
+}
+
+export async function getThreadFavorite(tid: string): Promise<{ favorited: boolean; favid?: string }> {
+  let page = 1;
+  while (true) {
+    const v = variablesOf(await request('myfavthread', { page }));
+    const list = asArray(v.list).map(asRecord);
+    const found = list.find((it: any) => it.idtype === 'tid' && asString(it.id) === tid);
+    if (found) return { favorited: true, favid: asString(found.favid) || undefined };
+    const perpage = asPositiveInt(v.perpage, list.length || 20);
+    const count = asInt(v.count, list.length);
+    const totalPages = count > 0 ? Math.max(1, Math.ceil(count / perpage)) : page;
+    if (page >= totalPages || list.length === 0) break;
+    page += 1;
+  }
+  return { favorited: false };
+}
+
+async function currentFormhash(): Promise<string> {
+  return asString(variablesOf(await request('forumindex')).formhash);
+}
+
+export async function addThreadFavorite(tid: string): Promise<{ favorited: true; favid?: string; message: string }> {
+  const formhash = await currentFormhash();
+  const r = await request('favthread', { id: tid, idtype: 'tid', formhash }, { method: 'POST', body: '' });
+  const val = messageCode(r.Message);
+  const favorite = await getThreadFavorite(tid).catch(() => ({ favorited: true as const, favid: undefined }));
+  return {
+    favorited: true,
+    favid: favorite.favid,
+    message: val === 'favorite_repeat' ? '已经收藏过了' : '已收藏',
+  };
+}
+
+export async function removeThreadFavorite(tid: string, favid?: string): Promise<{ favorited: false; message: string }> {
+  const favorite = favid ? { favorited: true, favid } : await getThreadFavorite(tid);
+  if (!favorite.favid) return { favorited: false, message: '已取消收藏' };
+
+  const formhash = await currentFormhash();
+  const url = `${Platform.OS === 'web' ? PROXY : HOST}/home.php?mod=spacecp&ac=favorite&op=delete&favid=${encodeURIComponent(favorite.favid)}`;
+  const body = new URLSearchParams({ deletesubmit: 'true', formhash }).toString();
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { Accept: 'text/html,*/*', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+      credentials: Platform.OS === 'web' ? 'omit' : undefined,
+    } as RequestInit);
+  } catch (e) {
+    throw new ApiError(
+      Platform.OS === 'web' ? 'proxy_unavailable' : 'network',
+      Platform.OS === 'web' ? '无法连接本地代理，请确认 npm run proxy 正在运行' : '网络连接失败，请稍后重试',
+      { module: 'favorite_delete' },
+    );
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    throw new ApiError('http', `服务器暂时不可用（${res.status}），请稍后重试`, { module: 'favorite_delete', status: res.status, snippet: snippet(text) });
+  }
+  if (/操作成功|favorite_delete_succeed|删除成功/i.test(text)) {
+    return { favorited: false, message: '已取消收藏' };
+  }
+  const bodySnippet = snippet(text);
+  if (/收藏不存在|favorite_does_not_exist/i.test(text)) return { favorited: false, message: '已取消收藏' };
+  if (/formhash|表单验证|请求来路不正确/i.test(text)) {
+    throw new ApiError('business', '取消收藏失败，请刷新后重试', { module: 'favorite_delete', snippet: bodySnippet });
+  }
+  throw new ApiError('business', '取消收藏失败，请稍后重试', { module: 'favorite_delete', snippet: bodySnippet });
+}
+
+export async function setThreadFavorite(tid: string, next: boolean, favid?: string): Promise<{ favorited: boolean; favid?: string; message: string }> {
+  return next ? addThreadFavorite(tid) : removeThreadFavorite(tid, favid);
 }
 
 // Own profile with the corrected 收藏 count: space.favtimes counts "favorited by

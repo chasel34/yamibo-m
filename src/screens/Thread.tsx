@@ -8,7 +8,7 @@ import RemoteImage from '../components/RemoteImage';
 import { Loader, ErrorView } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
-import { getThread, resolvePostPage } from '../api';
+import { getThread, getThreadFavorite, resolvePostPage, setThreadFavorite } from '../api';
 import { parseForumLink } from '../forumLinks';
 import { recordThread } from '../history';
 import { LITERATURE_FIDS } from '../reading';
@@ -211,12 +211,16 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
   const [totalPages, setTotalPages] = React.useState(1);
   const [paging, setPaging] = React.useState(false);
   const [opOnly, setOpOnly] = React.useState(false);
+  const [favorited, setFavorited] = React.useState(false);
+  const [favoriteId, setFavoriteId] = React.useState<string | undefined>(undefined);
+  const [favoriteBusy, setFavoriteBusy] = React.useState(false);
   const [flash, setFlash] = React.useState<number | null>(null);
   const scRef = React.useRef<ScrollView>(null);
   const floorY = React.useRef<Map<number, number>>(new Map());
   const pending = React.useRef<number | null>(null);
   const targetHandled = React.useRef(false);
   const targetLoadPage = React.useRef<number | null>(null);
+  const favoriteVersion = React.useRef(0);
 
   const goBack = React.useCallback(() => {
     const state = typeof navigation.getState === 'function' ? navigation.getState() : null;
@@ -269,6 +273,20 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
   }, [tid, targetPid, targetPage]); // eslint-disable-line
 
   React.useEffect(() => { load(); }, [load]);
+
+  React.useEffect(() => {
+    if (!data?.thread.tid) return;
+    let alive = true;
+    const version = ++favoriteVersion.current;
+    getThreadFavorite(tid)
+      .then((next) => {
+        if (!alive || version !== favoriteVersion.current) return;
+        setFavorited(next.favorited);
+        setFavoriteId(next.favid);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [data?.thread.tid, tid]);
 
   const fetchPage = async (n: number, only = opOnly) => {
     if (paging) return;
@@ -380,6 +398,29 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
     if (!data?.thread.author?.uid) return;
     nav.push('reader', { tid, authorid: data.thread.author.uid, fresh });
   };
+  const toggleFavorite = async () => {
+    if (favoriteBusy || !data?.thread.tid) return;
+    const next = !favorited;
+    const prevFavorited = favorited;
+    const prevFavoriteId = favoriteId;
+    const version = ++favoriteVersion.current;
+    setFavoriteBusy(true);
+    setFavorited(next);
+    try {
+      const result = await setThreadFavorite(tid, next, favoriteId);
+      if (version !== favoriteVersion.current) return;
+      setFavorited(result.favorited);
+      setFavoriteId(result.favid);
+      nav.toast(result.message);
+    } catch (e) {
+      if (version !== favoriteVersion.current) return;
+      setFavorited(prevFavorited);
+      setFavoriteId(prevFavoriteId);
+      nav.toast(e.message || '收藏操作失败');
+    } finally {
+      if (version === favoriteVersion.current) setFavoriteBusy(false);
+    }
+  };
 
   return (
     <Screen>
@@ -465,8 +506,8 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
           style={{ flex: 1, height: 46, borderRadius: 999, backgroundColor: t.field, justifyContent: 'center', paddingHorizontal: 20 }}>
           <Text style={{ color: t.faint, fontFamily: FONTS.head, fontSize: 14.5 }}>暂无实现此功能</Text>
         </Pressable>
-        <Pressable onPress={nav.notImplemented}>
-          <Icon name="heart" size={24} color={t.inkSoft} fill="none" />
+        <Pressable onPress={toggleFavorite} disabled={favoriteBusy || !data} style={({ pressed }) => ({ opacity: favoriteBusy ? 0.55 : pressed ? 0.65 : 1 })}>
+          <Icon name="heart" size={24} color={favorited ? t.accent : t.inkSoft} fill={favorited ? t.accent : 'none'} />
         </Pressable>
         <Pressable onPress={nav.notImplemented}>
           <Icon name="share" size={22} color={t.inkSoft} />

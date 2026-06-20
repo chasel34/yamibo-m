@@ -13,6 +13,7 @@
 - 帖子详情：正文 + 楼层回复、富文本（文本 / 图片 / 引用）解析、图片大图查看器（`viewthread`）
 - 帖子详情增强：分页跳转、楼层定位、只看楼主（`viewthread&authorid=`）
 - 个人主页（自己 / 他人）（`profile`），我的收藏（`myfavthread`）
+- 收藏 / 取消收藏（添加走移动 API `favthread`，取消走 `home.php` 标准 POST）
 - 消息：提醒（`mynotelist`）、私信会话列表（`mypm`，只读）、底部未读角标（`notice`）
 - 浏览历史（本地）、设置（深色模式 / 字号 / 清缓存占位）、关于
 - 真实头像与帖内图片加载、加载 / 空 / 错误重试态、浅深色主题切换并记忆
@@ -36,7 +37,6 @@
 |---|---|---|
 | 发新帖 / 回帖 / 编辑 | `newthread` / `sendreply` / `editpost` | 需 formhash、富文本/图片上传 |
 | 图片 / 附件上传 | `forumupload` | 与发帖/回帖联动 |
-| 收藏 / 取消收藏 | `favthread` | 详情页 ♡ 真正写入（目前仅前端态 + 提示） |
 | 评分 / 点评 | `reppost` / `comment` | 文学区"加分代替灌水"社区习惯 |
 | 发送私信 / 会话详情 | `sendpm` / `pmlist&touid=` | 目前仅只读会话列表 |
 | 关注 / 好友 | `follow` / `friendlist` | 个人主页"关注/私信"按钮目前置灰 |
