@@ -1,0 +1,89 @@
+name: Release Android APK
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-android:
+    name: Build and publish Android APK
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Check Expo token
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "Missing EXPO_TOKEN repository secret."
+            exit 1
+          fi
+
+      - name: Build Android APK with EAS
+        run: |
+          npx eas-cli@latest build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > eas-build.json
+
+      - name: Extract EAS build metadata
+        id: eas_build
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const data = JSON.parse(fs.readFileSync("eas-build.json", "utf8"));
+          const build = Array.isArray(data) ? data[0] : data;
+          const artifactUrl = build?.artifacts?.buildUrl || build?.artifacts?.applicationArchiveUrl;
+          const dashboardUrl = build?.buildDetailsPageUrl || build?.url || "";
+
+          if (!artifactUrl) {
+            console.error("Could not find APK artifact URL in EAS build output.");
+            console.error(JSON.stringify(data, null, 2));
+            process.exit(1);
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `artifact_url=${artifactUrl}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `dashboard_url=${dashboardUrl}\n`);
+          NODE
+
+      - name: Download APK
+        run: curl -L "${{ steps.eas_build.outputs.artifact_url }}" -o yamibo-m-${{ github.ref_name }}.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: yamibo-m ${{ github.ref_name }}
+          files: yamibo-m-${{ github.ref_name }}.apk
+          body: |
+            # yamibo-m ${{ github.ref_name }}
+
+            Android preview/internal APK built with EAS.
+
+            EAS build: ${{ steps.eas_build.outputs.dashboard_url }}
+
+            Disclaimer: This is an unofficial third-party mobile client for 百合会 and is not affiliated with or endorsed by the official 百合会 forum.
