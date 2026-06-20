@@ -112,6 +112,7 @@ body{font-family:"Noto Serif SC","Songti SC",Georgia,serif}
 #pager{position:absolute;inset:0;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 #flow{height:calc(100vh - 108px);margin:52px 27px 56px;column-width:calc(100vw - 54px);column-gap:54px;column-fill:auto;will-change:transform;transform:translateX(0)}
 #flow>*{break-inside:avoid;-webkit-column-break-inside:avoid}
+#flow p,#flow aside,#flow a,#flow th,#flow td{overflow-wrap:anywhere;word-break:break-word}
 #flow p{break-inside:auto;-webkit-column-break-inside:auto;font-size:${options.fontSize}px;line-height:1.95;margin:0 0 .95em;text-indent:2em;text-align:justify;letter-spacing:.01em}
 .chapter{text-align:center;padding:34px 0 30px}
 .chapter .no{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:12px;font-weight:700;letter-spacing:3px;color:${options.chapterType === 'chapter' ? T.accent : T.soft}}
