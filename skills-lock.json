@@ -79,6 +79,12 @@
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "d31e234f0c90694a670222cdd1dafa853e051d7066beda389f1097c22dadd461"
     },
+    "improve": {
+      "source": "shadcn/improve",
+      "sourceType": "github",
+      "skillPath": "skills/improve/SKILL.md",
+      "computedHash": "39a9358732dcff385e9e4d3e60b4547856f834e54a58b35e455aa9bd49928c13"
+    },
     "native-data-fetching": {
       "source": "expo/skills",
       "sourceType": "github",
