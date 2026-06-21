@@ -281,6 +281,9 @@ export interface CollectionItem {
 export interface ListResult<T> {
   list: T[];
   count: number;
+  page: number;
+  perpage: number;
+  totalPages: number;
 }
 export interface Reminder {
   id: string;

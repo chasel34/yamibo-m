@@ -19,6 +19,8 @@ const { URL } = require('url');
 const TARGET = 'https://bbs.yamibo.com';
 const PORT = process.env.PROXY_PORT || 8089;
 const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36 yamibo-m/1.0';
+const ALLOWED_PROXY_ORIGINS = new Set([TARGET]);
+const ALLOWED_CORS_ORIGINS = new Set(['http://localhost:8085', 'http://127.0.0.1:8085']);
 
 // Single in-memory cookie jar (one dev session).
 const jar = new Map();
@@ -43,8 +45,42 @@ function storeSetCookies(list) {
   });
 }
 
+function parseHttpUrl(input) {
+  try {
+    const url = new URL(input);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isAllowedProxyUrl(input) {
+  const url = typeof input === 'string' ? parseHttpUrl(input) : input;
+  return !!url && ALLOWED_PROXY_ORIGINS.has(url.origin);
+}
+
+function writeInvalidUrl(res, message) {
+  res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end(message);
+}
+
+function setCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  if (!origin || ALLOWED_CORS_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || 'http://localhost:8085');
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
 function pipeImage(imageUrl, res, redirectsLeft = 3) {
-  const targetImage = new URL(imageUrl);
+  const targetImage = parseHttpUrl(imageUrl);
+  if (!isAllowedProxyUrl(targetImage)) {
+    writeInvalidUrl(res, 'image URL is not allowed');
+    return;
+  }
   const client = targetImage.protocol === 'https:' ? https : http;
   const headers = {
     'User-Agent': UA,
@@ -56,7 +92,9 @@ function pipeImage(imageUrl, res, redirectsLeft = 3) {
     const location = imageRes.headers.location;
     if (location && imageRes.statusCode >= 300 && imageRes.statusCode < 400 && redirectsLeft > 0) {
       imageRes.resume();
-      pipeImage(new URL(location, targetImage).toString(), res, redirectsLeft - 1);
+      const next = parseHttpUrl(new URL(location, targetImage).toString());
+      if (!isAllowedProxyUrl(next)) writeInvalidUrl(res, 'redirect URL is not allowed');
+      else pipeImage(next.toString(), res, redirectsLeft - 1);
       return;
     }
     res.writeHead(imageRes.statusCode || 502, {
@@ -72,7 +110,11 @@ function pipeImage(imageUrl, res, redirectsLeft = 3) {
 }
 
 function resolveUrl(input, res, redirectsLeft = 5) {
-  const target = new URL(input);
+  const target = parseHttpUrl(input);
+  if (!isAllowedProxyUrl(target)) {
+    writeInvalidUrl(res, 'URL is not allowed');
+    return;
+  }
   const client = target.protocol === 'https:' ? https : http;
   const headers = { 'User-Agent': UA, 'Accept': 'text/html,*/*', 'Referer': TARGET + '/' };
   if (target.origin === TARGET && jar.size) headers.Cookie = cookieHeader();
@@ -81,7 +123,9 @@ function resolveUrl(input, res, redirectsLeft = 5) {
     const location = upstream.headers.location;
     if (location && upstream.statusCode >= 300 && upstream.statusCode < 400 && redirectsLeft > 0) {
       upstream.resume();
-      resolveUrl(new URL(location, target).toString(), res, redirectsLeft - 1);
+      const next = parseHttpUrl(new URL(location, target).toString());
+      if (!isAllowedProxyUrl(next)) writeInvalidUrl(res, 'redirect URL is not allowed');
+      else resolveUrl(next.toString(), res, redirectsLeft - 1);
       return;
     }
     upstream.resume();
@@ -95,18 +139,15 @@ function resolveUrl(input, res, redirectsLeft = 5) {
 }
 
 const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  setCorsHeaders(req, res);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   if (req.url === '/__reset') { jar.clear(); res.writeHead(200); res.end('ok'); return; }
 
   if (req.url.startsWith('/__image?')) {
     const imageUrl = new URL(req.url, 'http://localhost').searchParams.get('url');
-    if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
-      res.writeHead(400);
-      res.end('invalid image URL');
+    if (!imageUrl || !isAllowedProxyUrl(imageUrl)) {
+      writeInvalidUrl(res, 'invalid image URL');
       return;
     }
     pipeImage(imageUrl, res);
@@ -115,9 +156,8 @@ const server = http.createServer((req, res) => {
 
   if (req.url.startsWith('/__resolve?')) {
     const input = new URL(req.url, 'http://localhost').searchParams.get('url');
-    if (!input || !/^https?:\/\//i.test(input)) {
-      res.writeHead(400);
-      res.end('invalid URL');
+    if (!input || !isAllowedProxyUrl(input)) {
+      writeInvalidUrl(res, 'invalid URL');
       return;
     }
     resolveUrl(input, res);
@@ -160,6 +200,17 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`[yamibo proxy] forwarding ${TARGET} on http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`[yamibo proxy] forwarding ${TARGET} on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = {
+  TARGET,
+  ALLOWED_CORS_ORIGINS,
+  parseHttpUrl,
+  isAllowedProxyUrl,
+  setCorsHeaders,
+  server,
+};

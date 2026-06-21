@@ -56,6 +56,17 @@ function variablesOf(response: any): Record<string, any> {
   return asRecord(response?.Variables);
 }
 
+function paginationFor(v: Record<string, any>, listLength: number, page: number): Pick<ListResult<unknown>, 'count' | 'page' | 'perpage' | 'totalPages'> {
+  const count = asInt(v.count, listLength);
+  const perpage = asPositiveInt(v.perpage, listLength || 20);
+  return {
+    count,
+    page: asPositiveInt(v.page, page),
+    perpage,
+    totalPages: count > 0 ? Math.max(1, Math.ceil(count / perpage)) : 1,
+  };
+}
+
 function ingest(raw: any) {
   const v = asRecord(raw);
   if (!Object.keys(v).length) return;
@@ -322,6 +333,10 @@ export async function getBoard(fid: string, page = 1, typeid: string | number = 
     default: if (hasType) params.filter = 'typeid'; break; // 全部
   }
   const v = variablesOf(await request('forumdisplay', params));
+  return mapBoardData(v, fid, page);
+}
+
+function mapBoardData(v: Record<string, any>, fid: string, page = 1): BoardData {
   const tt: Record<string, any> = asRecord(asRecord(v.threadtypes).types);
   const types: ThreadType[] = Object.keys(tt).map((id) => ({ id, name: asString(tt[id]) })).filter((it) => it.name);
   const subs: BoardSub[] = asArray(v.sublist).map((rawSub: any) => {
@@ -517,6 +532,10 @@ export async function getProfile(uid?: string): Promise<{ user: UserProfile }> {
 // ===================== Collections (myfavthread) =====================
 export async function getCollections(page = 1): Promise<ListResult<CollectionItem>> {
   const v = variablesOf(await request('myfavthread', { page }));
+  return mapCollections(v, page);
+}
+
+function mapCollections(v: Record<string, any>, page = 1): ListResult<CollectionItem> {
   const list: CollectionItem[] = asArray(v.list).map(asRecord).filter((it: any) => it.idtype === 'tid').map((it: any) => ({
     id: asString(it.id), tid: asString(it.id), favid: asString(it.favid) || undefined,
     tag: '收藏',
@@ -526,7 +545,7 @@ export async function getCollections(page = 1): Promise<ListResult<CollectionIte
     replies: asInt(it.replies),
     excerpt: '',
   }));
-  return { list, count: asInt(v.count, list.length) };
+  return { list, ...paginationFor(v, list.length, page) };
 }
 
 export async function getThreadFavorite(tid: string): Promise<{ favorited: boolean; favid?: string }> {
@@ -617,6 +636,10 @@ const NOTE_LABEL: Record<string, string> = { system: '系统通知', post: '回�
 const NOTE_ICON: Record<string, string> = { system: 'info', post: 'reply', pcomment: 'reply', at: 'at', friend: 'users', follow: 'users' };
 export async function getReminders(page = 1): Promise<ListResult<Reminder>> {
   const v = variablesOf(await request('mynotelist', { page }));
+  return mapReminders(v, page);
+}
+
+function mapReminders(v: Record<string, any>, page = 1): ListResult<Reminder> {
   const list: Reminder[] = asArray(v.list).map(asRecord).map((it: any) => ({
     id: asString(it.id),
     type: asString(it.type),
@@ -626,12 +649,16 @@ export async function getReminders(page = 1): Promise<ListResult<Reminder>> {
     text: stripHtml(it.note),
     time: timeFromUnix(it.dateline),
   }));
-  return { list, count: asInt(v.count, list.length) };
+  return { list, ...paginationFor(v, list.length, page) };
 }
 
 // ===================== Private messages (mypm) =====================
 export async function getPMs(page = 1): Promise<ListResult<PMItem>> {
   const v = variablesOf(await request('mypm', { page }));
+  return mapPMs(v, page);
+}
+
+function mapPMs(v: Record<string, any>, page = 1): ListResult<PMItem> {
   const list: PMItem[] = asArray(v.list).map(asRecord).map((it: any) => ({
     id: asString(it.plid || it.pmid || it.touid),
     user: { name: asString(it.tousername || it.msgfromusername || it.author, '对话'), uid: asString(it.touid || it.msgfromid) },
@@ -639,7 +666,15 @@ export async function getPMs(page = 1): Promise<ListResult<PMItem>> {
     time: timeFromUnix(it.lastdateline || it.dateline),
     unread: asInt(it.isnew || it.new),
   }));
-  return { list, count: asInt(v.count, list.length) };
+  return { list, ...paginationFor(v, list.length, page) };
 }
 
 export { avatarUrl };
+
+export const __private = {
+  mapBoardData,
+  mapCollections,
+  mapReminders,
+  mapPMs,
+  paginationFor,
+};

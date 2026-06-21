@@ -2,13 +2,15 @@ import React from 'react';
 import { View, Text, Pressable, ScrollView, RefreshControl } from 'react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
-import { Avatar, IconBtn, Divider } from '../components/ui';
+import { Avatar, IconBtn, Divider, Pager } from '../components/ui';
 import { Loader, ErrorView, EmptyState } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
 import { getReminders, getPMs } from '../api';
+import type { ListResult, Reminder, PMItem } from '../types';
 
 type Seg = 'remind' | 'dm';
+type ListsState = { remind: ListResult<Reminder> | null; dm: ListResult<PMItem> | null };
 const SEGS = {
   remind: { fetch: getReminders },
   dm: { fetch: getPMs },
@@ -18,33 +20,41 @@ export default function MessagesScreen() {
   const nav = useNav();
   const { t } = useTheme();
   const [seg, setSeg] = React.useState<Seg>('remind');
-  const [lists, setLists] = React.useState<{ remind: any[] | null; dm: any[] | null }>({ remind: null, dm: null });
+  const [lists, setLists] = React.useState<ListsState>({ remind: null, dm: null });
   const [error, setError] = React.useState<string | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [paging, setPaging] = React.useState<Seg | null>(null);
   const listsRef = React.useRef(lists);
   listsRef.current = lists;
 
-  const load = React.useCallback(async (which: Seg, isRefresh?: boolean) => {
+  const load = React.useCallback(async (which: Seg, targetPage = 1, isRefresh?: boolean) => {
     if (isRefresh) setRefreshing(true);
+    else if (listsRef.current[which]) setPaging(which);
     setError(null);
     try {
-      const r = await SEGS[which].fetch(1);
-      setLists((prev) => ({ ...prev, [which]: r.list }));
+      const r = await SEGS[which].fetch(targetPage);
+      setLists((prev) => ({ ...prev, [which]: r }));
     } catch (e) {
       if (listsRef.current[which] === null) setError(e.message); else nav.toast(e.message);
     } finally {
       setRefreshing(false);
+      setPaging(null);
     }
   }, [nav]);
 
   // load each segment once, the first time it's shown
   React.useEffect(() => {
-    if (lists[seg] === null) load(seg, false);
+    if (lists[seg] === null) load(seg, 1, false);
   }, [seg]); // eslint-disable-line
 
-  const reminders = lists.remind;
-  const dms = lists.dm;
-  const refresh = () => load(seg, true);
+  const reminders = lists.remind?.list || null;
+  const dms = lists.dm?.list || null;
+  const active = lists[seg];
+  const refresh = () => load(seg, 1, true);
+  const goPage = (page: number) => {
+    if (!active || paging || page === active.page) return;
+    load(seg, page, false);
+  };
   const loadingThis = lists[seg] === null;
 
   return (
@@ -112,6 +122,15 @@ export default function MessagesScreen() {
                 </View>
               ))
             )}
+            {active ? (
+              <Pager
+                page={active.page}
+                totalPages={active.totalPages}
+                onJump={goPage}
+                cap={`—  共 ${active.count} 条  —`}
+                extra={paging === seg ? <Text style={{ fontFamily: FONTS.body, fontSize: 12, color: t.faint }}>加载中…</Text> : null}
+              />
+            ) : null}
             <View style={{ height: 20 }} />
           </ScrollView>
         )}
