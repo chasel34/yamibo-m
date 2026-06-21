@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# generated agent-skill symlinks (canonical source is .agents/skills/ + skills-lock.json)
+.claude/skills/
+
 # Expo
 .expo/
 dist/
