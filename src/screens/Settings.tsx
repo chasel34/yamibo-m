@@ -64,18 +64,6 @@ export default function SettingsScreen() {
           </ListRow>
         </Card>
 
-        <Kicker style={{ paddingTop: 24, paddingHorizontal: 22, paddingBottom: 11 }}>账户</Kicker>
-        <Card>
-          <ListRow onPress={() => nav.push('about', {})}>
-            {lrIc('info')}{lrTitle('关于百合会客户端')}
-            <Icon name="chevRight" size={18} color={t.faint} />
-          </ListRow>
-          <InnerHr />
-          <ListRow onPress={() => nav.logout()}>
-            <View style={{ width: 26, alignItems: 'center' }}><Icon name="logout" size={20} color={t.accent} /></View>
-            {lrTitle('退出登录', t.accent)}
-          </ListRow>
-        </Card>
         <View style={{ height: 24 }} />
       </ScrollView>
     </Screen>

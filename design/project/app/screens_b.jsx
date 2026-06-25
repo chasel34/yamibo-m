@@ -193,9 +193,8 @@ const ThreadScreen = ({thread, board}) => {
                 <Ic name={opOnly?"check":"user"} size={14}/>只看楼主
               </div>
             )}
-            {isNovel
-              ? <div className="navback" style={{background:"var(--accent)", color:"#fff"}} onClick={()=>nav.push("reader",{bookId:thread.novelId})}><Ic name="book" size={18}/></div>
-              : <div className="navback" onClick={()=>nav.toast("分享：敬请期待")}><Ic name="share" size={18}/></div>}
+            {isNovel &&
+              <div className="navback" style={{background:"var(--accent)", color:"#fff"}} onClick={()=>nav.push("reader",{bookId:thread.novelId})}><Ic name="book" size={18}/></div>}
           </div>
         }/>
       <div className="scroll" ref={scRef} style={{paddingBottom:8}}>
@@ -295,7 +294,7 @@ const ProfileScreen = ({user, self}) => {
         <div className="navback" onClick={nav.pop}><Ic name="back" size={21}/></div>
         <div style={{flex:1}}></div>
         {self
-          ? <div className="navback" onClick={()=>nav.push("settings",{})}><Ic name="gear" size={19}/></div>
+          ? <div style={{width:40}}></div>
           : <div className="navback" onClick={()=>nav.toast("更多")}><Ic name="share" size={18}/></div>}
       </div>
       <div className="scroll">
@@ -323,15 +322,7 @@ const ProfileScreen = ({user, self}) => {
         <InfoRow label="所在地" v={u.location}/>
         <div className="feed-div"></div>
         {/* actions */}
-        {self ? (
-          <>
-            <ActionRow icon="bookmark" label="我的收藏" onClick={()=>nav.push("collections",{})}/>
-            <div className="feed-div" style={{margin:"0 22px 0 56px"}}></div>
-            <ActionRow icon="doc" label="我的发帖" onClick={()=>nav.toast("我的发帖")}/>
-            <div className="feed-div" style={{margin:"0 22px 0 56px"}}></div>
-            <ActionRow icon="logout" label="退出登录" danger onClick={()=>nav.logout()}/>
-          </>
-        ) : (
+        {self ? null : (
           <div className="row" style={{gap:12, padding:"22px 22px 0"}}>
             <button className="btn-primary disabled" style={{flex:1}}>关注</button>
             <button className="btn-primary disabled" style={{flex:1, background:"var(--card-2)", color:"var(--ink-soft)"}}>私信</button>

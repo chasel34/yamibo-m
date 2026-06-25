@@ -164,19 +164,6 @@ const SettingsScreen = () => {
           </div>
         </div>
 
-        <div className="kicker" style={{ padding: "24px 22px 11px" }}>账户</div>
-        <div className="card" style={{ margin: "0 16px", overflow: "hidden" }}>
-          <div className="listrow click" onClick={() => nav.push("about", {})}>
-            <span className="lr-ic"><I3 name="info" size={20} /></span>
-            <span className="lr-title">关于百合会客户端</span>
-            <I3 name="chevRight" size={18} style={{ color: "var(--faint)" }} />
-          </div>
-          <div className="hr" style={{ margin: "0 18px 0 57px" }}></div>
-          <div className="listrow click" onClick={() => nav.logout()}>
-            <span className="lr-ic" style={{ color: "var(--accent)" }}><I3 name="logout" size={20} /></span>
-            <span className="lr-title" style={{ color: "var(--accent)" }}>退出登录</span>
-          </div>
-        </div>
         <div style={{ height: 24 }}></div>
       </div>
     </>);

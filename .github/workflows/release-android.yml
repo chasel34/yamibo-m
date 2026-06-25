@@ -87,7 +87,6 @@ jobs:
             ## 下载
 
             - Android APK：请在本页面的 Assets 中下载 `yamibo-m-${{ github.ref_name }}.apk`
-            - EAS 构建记录：${{ steps.eas_build.outputs.dashboard_url }}
 
             ## 说明
 

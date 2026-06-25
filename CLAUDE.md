@@ -33,6 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Conventional Commits（`feat:`/`fix:`/`chore:`/`docs:`…）；仅在被明确要求时提交。
 - 发布版本使用 `v*` tag 触发 GitHub Release 流程；`main` 合并不自动构建 APK，以节省 Expo 免费额度。
+- GitHub Release 说明按常见 app 发版格式写“本次更新”：先查看上一个 tag 以来的 commits，再把相关改动整理成面向用户的简短变更说明；不要写 EAS 构建记录、构建后台链接或其他内部流水线信息，也不要直接堆砌内部流水线/依赖维护 commit。
 
 ### 分支管理（GitHub Flow）
 

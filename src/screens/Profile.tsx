@@ -3,7 +3,6 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
 import { Avatar, NavBack, Divider, HLine } from '../components/ui';
-import MRow from '../components/MRow';
 import { Loader, ErrorView } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
@@ -57,7 +56,7 @@ export default function ProfileScreen({ route }: NativeStackScreenProps<RootStac
         <NavBack onBack={nav.pop} />
         <View style={{ flex: 1 }} />
         {self
-          ? <NavBack onBack={() => nav.push('settings', {})}><Icon name="gear" size={19} color={t.inkSoft} /></NavBack>
+          ? <View style={{ width: 40 }} />
           : <NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>}
       </View>
 
@@ -85,15 +84,7 @@ export default function ProfileScreen({ route }: NativeStackScreenProps<RootStac
             {div}
             <InfoRow label="所在地" v={u.location} />
             {divFull}
-            {self ? (
-              <>
-                <MRow icon="bookmark" label="我的收藏" onPress={() => nav.push('collections', {})} />
-                <HLine style={{ marginLeft: 56, marginRight: 22 }} />
-                <MRow icon="doc" label="我的发帖" onPress={nav.notImplemented} />
-                <HLine style={{ marginLeft: 56, marginRight: 22 }} />
-                <MRow icon="logout" label="退出登录" danger onPress={() => nav.logout()} />
-              </>
-            ) : (
+            {self ? null : (
               <>
                 <View style={{ flexDirection: 'row', gap: 12, paddingTop: 22, paddingHorizontal: 22 }}>
                   <Pressable onPress={nav.notImplemented} style={{ flex: 1, height: 52, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
