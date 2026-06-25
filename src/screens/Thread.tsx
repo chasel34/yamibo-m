@@ -428,9 +428,8 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
         right={(
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {data && canOpOnly ? <OpOnlyPill active={opOnly} disabled={paging} onPress={toggleOpOnly} /> : null}
-            {readingCandidate
-              ? <Pressable onPress={() => openReader()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}><Icon name="book" size={18} color={t.onAccent} /></Pressable>
-              : <NavBack onBack={nav.notImplemented}><Icon name="share" size={18} color={t.inkSoft} /></NavBack>}
+            {readingCandidate &&
+              <Pressable onPress={() => openReader()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}><Icon name="book" size={18} color={t.onAccent} /></Pressable>}
           </View>
         )} />
 
