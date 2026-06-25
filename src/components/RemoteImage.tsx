@@ -1,5 +1,6 @@
 import React from 'react';
-import { Image, Linking, Pressable, StyleProp, ImageStyle, Text, View } from 'react-native';
+import { Linking, Pressable, StyleProp, ImageStyle, Text, View } from 'react-native';
+import CachedImage from './CachedImage';
 import { StripeImg } from './ui';
 import { useTheme, FONTS } from '../theme';
 import { displayImageUrl } from '../api';
@@ -43,11 +44,12 @@ export default function RemoteImage({ src, cap, onPress, style, width, height }:
   };
   return (
     <Pressable onPress={onPress}>
-      <Image
+      <CachedImage
         source={{ uri: displayImageUrl(src) || src }}
         onLoad={onLoad}
         onError={() => setErr(true)}
-        resizeMode="contain"
+        contentFit="contain"
+        recyclingKey={src ?? undefined}
         style={[{ width: '100%', aspectRatio: ratio, borderRadius: 10, backgroundColor: t.card2, marginTop: 6, marginBottom: 14 }, style]}
       />
     </Pressable>

@@ -4,6 +4,11 @@ import type { Block, RichTextRun } from './types';
 
 export const HOST = 'https://bbs.yamibo.com';
 
+// ---- clamp a number into [lo, hi] ----
+export function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
 // ---- avatar (§5.1). avatar.php follows the redirect to the real/default image. ----
 export function avatarUrl(uid?: string | null, size = 'middle'): string | null {
   if (!uid || uid === '0') return null;
