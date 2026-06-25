@@ -1,41 +1,21 @@
 import React from 'react';
-import {
-  Animated, Image, PanResponder, Pressable, ScrollView, Text, View,
-} from 'react-native';
+import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import Icon from '../components/Icon';
-import { StatusBar, StripeImg } from '../components/ui';
+import { StatusBar } from '../components/ui';
+import ImagePager, { ImagePagerHandle, ImagePagerItem } from '../components/ImagePager';
+import ZoomableImage, { ViewerImage } from '../components/ZoomableImage';
 import { useNav } from '../useNav';
 import { FONTS } from '../theme';
 import { READER_THEMES, getViewerHinted, markViewerHinted } from '../reading';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { displayImageUrl } from '../api';
-
-interface ViewerItem {
-  src?: string | null;
-  cap?: string;
-}
+import { clamp } from '../util';
 
 // 固定纸白 chrome（贴合阅读模式默认外观，不跟随/切换主题），与 Reader.tsx 的 chrome 同源。
 const T = READER_THEMES.paper;
 const ANIM = { duration: 300, useNativeDriver: true } as const;
-
-// —— 单页/缩略图：渲染真实图片，失败降级到 StripeImg 占位 ——
-function ViewerImage({ item, contain }: { item?: ViewerItem; contain?: boolean }) {
-  const [err, setErr] = React.useState(false);
-  React.useEffect(() => { setErr(false); }, [item && item.src]);
-  if (item && item.src && !err) {
-    return (
-      <Image
-        source={{ uri: displayImageUrl(item.src) || item.src }}
-        onError={() => setErr(true)}
-        resizeMode={contain ? 'contain' : 'cover'}
-        style={{ width: '100%', height: '100%' }}
-      />
-    );
-  }
-  return <StripeImg h={9999} radius={0} cap={item && item.cap ? item.cap : '图片占位'} style={{ width: '100%', height: '100%' }} />;
-}
 
 // —— 底部进度滑块（复刻 reader 的 slider，按页定位） ——
 function PageSlider({ i, n, onJump }: { i: number; n: number; onJump: (k: number) => void }) {
@@ -43,7 +23,7 @@ function PageSlider({ i, n, onJump }: { i: number; n: number; onJump: (k: number
   const [preview, setPreview] = React.useState<number | null>(null);
   const idx = preview != null ? preview : i;
   const ratio = n <= 1 ? 1 : idx / (n - 1);
-  const pick = (x: number) => Math.round(Math.max(0, Math.min(1, x / width.current)) * (n - 1));
+  const pick = (x: number) => Math.round(clamp(x / width.current, 0, 1) * (n - 1));
   return (
     <View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 9 }}>
@@ -71,7 +51,7 @@ function PageSlider({ i, n, onJump }: { i: number; n: number; onJump: (k: number
 export default function ImageViewerScreen({ route }: NativeStackScreenProps<RootStackParamList, 'viewer'>) {
   const nav = useNav();
   const title = route.params?.title;
-  const images: ViewerItem[] = route.params?.images?.length ? route.params.images : [{ cap: '图片占位' }];
+  const images: ImagePagerItem[] = route.params?.images?.length ? route.params.images : [{ cap: '图片占位' }];
   const n = images.length;
   const initialIndex = Math.min(Math.max(route.params?.index || 0, 0), n - 1);
 
@@ -84,20 +64,19 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
   const [vp, setVp] = React.useState({ W: 0, H: 0 });
   const { W, H } = vp;
 
-  const iRef = React.useRef(i);
-  React.useEffect(() => { iRef.current = i; }, [i]);
-
-  // —— 翻页轨道 / 下拉退出 用 Animated.Value 平滑过渡 ——
-  const posX = React.useRef(new Animated.Value(0)).current;   // 横向：-i*W + dx
-  const posY = React.useRef(new Animated.Value(0)).current;   // 纵向：dy
-  const zScale = React.useRef(new Animated.Value(1)).current;
-  const zTx = React.useRef(new Animated.Value(0)).current;    // 屏幕空间平移
-  const zTy = React.useRef(new Animated.Value(0)).current;
+  const pagerRef = React.useRef<ImagePagerHandle>(null);
+  const targetRef = React.useRef(initialIndex);   // 即时记录“意图页”，让快速点击/连点不丢、不依赖滞后的 state
   const uiAnim = React.useRef(new Animated.Value(0)).current;
 
-  const z = React.useRef({ scale: 1, tx: 0, ty: 0 });   // 缩放/平移数值快照（手势读取用）
-  const g = React.useRef<any>({});                      // 手势状态机（镜像 viewer.jsx 的 g.current）
-  const tap = React.useRef<any>({ t: 0, x: 0, y: 0, timer: null });
+  // —— 预读邻页（配合 offscreenPageLimit 的 Mihon 式预读）：大图秒出、翻页不闪旧图 ——
+  const prefetchAround = React.useCallback((center: number) => {
+    for (const k of [center - 1, center + 1, center - 2, center + 2]) {
+      if (k < 0 || k >= n) continue;
+      const src = images[k] && images[k].src;
+      const url = displayImageUrl(src) || src;
+      if (url) ExpoImage.prefetch(url, { cachePolicy: 'memory-disk' });
+    }
+  }, [images, n]);
 
   // —— 首次提示 / chrome 自动隐藏（镜像 web 的 localStorage 逻辑） ——
   React.useEffect(() => {
@@ -107,188 +86,70 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
       setLoaded(true);
     })();
   }, []);
+  React.useEffect(() => { prefetchAround(initialIndex); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const dismissHint = React.useCallback(() => { setHint(false); markViewerHinted(); }, []);
   React.useEffect(() => { if (hint) { const t = setTimeout(dismissHint, 4200); return () => clearTimeout(t); } }, [hint, dismissHint]);
   React.useEffect(() => { if (!hint && ui) { const t = setTimeout(() => setUi(false), 2200); return () => clearTimeout(t); } }, [hint, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => { Animated.timing(uiAnim, { toValue: ui ? 1 : 0, ...ANIM }).start(); }, [ui, uiAnim]);
 
-  const clampPan = React.useCallback((x: number, y: number, s: number): [number, number] => {
-    const mx = ((s - 1) * W) / 2;
-    const my = ((s - 1) * H) / 2;
-    return [Math.max(-mx, Math.min(mx, x)), Math.max(-my, Math.min(my, y))];
-  }, [W, H]);
-
-  const setZoom = React.useCallback((s: number, x: number, y: number) => {
-    z.current = { scale: s, tx: x, ty: y };
-    zScale.setValue(s); zTx.setValue(x); zTy.setValue(y);
-    setZoomed(s > 1.001);
-  }, [zScale, zTx, zTy]);
-
-  const resetZoom = React.useCallback((animated = true) => {
-    z.current = { scale: 1, tx: 0, ty: 0 };
-    setZoomed(false);
-    if (animated) {
-      Animated.parallel([
-        Animated.timing(zScale, { toValue: 1, duration: 260, useNativeDriver: true }),
-        Animated.timing(zTx, { toValue: 0, duration: 260, useNativeDriver: true }),
-        Animated.timing(zTy, { toValue: 0, duration: 260, useNativeDriver: true }),
-      ]).start();
-    } else { zScale.setValue(1); zTx.setValue(0); zTy.setValue(0); }
-  }, [zScale, zTx, zTy]);
-
+  // 页码唯一真相源：原生 pager 吸附后回调。
+  const onIndex = React.useCallback((pos: number) => {
+    targetRef.current = pos;
+    setI(pos);
+    prefetchAround(pos);
+  }, [prefetchAround]);
+  // 点击/按钮翻页：带动画的 setPage（去重避免重复命令）。
   const go = React.useCallback((ni: number) => {
-    if (!W || ni < 0 || ni > n - 1) return;
-    resetZoom();
-    setI(ni);
-    Animated.timing(posX, { toValue: -ni * W, duration: 320, useNativeDriver: true }).start();
-    Animated.timing(posY, { toValue: 0, ...ANIM }).start();
-  }, [W, n, posX, posY, resetZoom]);
+    const t = clamp(ni, 0, n - 1);
+    if (t === targetRef.current) return;
+    targetRef.current = t;
+    pagerRef.current?.setPage(t);
+  }, [n]);
+  // 滑块/目录跳转：无动画直达。
+  const jump = React.useCallback((ni: number) => {
+    const t = clamp(ni, 0, n - 1);
+    targetRef.current = t;
+    pagerRef.current?.setPageWithoutAnimation(t);
+  }, [n]);
 
-  const springX = React.useCallback(() => {
-    Animated.timing(posX, { toValue: -iRef.current * W, ...ANIM }).start();
-  }, [posX, W]);
-  const springY = React.useCallback(() => {
-    Animated.timing(posY, { toValue: 0, ...ANIM }).start();
-  }, [posY]);
-
-  const singleTap = React.useCallback((locX: number) => {
-    if (z.current.scale > 1) { setUi((v) => !v); return; }
-    const f = W ? locX / W : 0.5;
-    if (f < 0.30) go(iRef.current - 1);
-    else if (f > 0.70) go(iRef.current + 1);
-    else setUi((v) => !v);
-  }, [W, go]);
-
-  const doubleTap = React.useCallback((locX: number, locY: number) => {
-    if (z.current.scale > 1) { resetZoom(); return; }
-    const ns = 2.4;
-    const px = locX - W / 2;
-    const py = locY - H / 2;
-    const [cx, cy] = clampPan(px * (1 - ns), py * (1 - ns), ns);
-    Animated.parallel([
-      Animated.timing(zScale, { toValue: ns, duration: 260, useNativeDriver: true }),
-      Animated.timing(zTx, { toValue: cx, duration: 260, useNativeDriver: true }),
-      Animated.timing(zTy, { toValue: cy, duration: 260, useNativeDriver: true }),
-    ]).start();
-    z.current = { scale: ns, tx: cx, ty: cy };
-    setZoomed(true);
-  }, [W, H, clampPan, resetZoom, zScale, zTx, zTy]);
-
-  const handleTap = React.useCallback(() => {
-    const now = Date.now();
-    const dt = tap.current;
-    const { locX, locY } = g.current;
-    if (now - dt.t < 280 && Math.abs(locX - dt.x) < 40 && Math.abs(locY - dt.y) < 40) {
-      clearTimeout(dt.timer); dt.t = 0;
-      doubleTap(locX, locY);
-    } else {
-      tap.current = { t: now, x: locX, y: locY, timer: setTimeout(() => singleTap(locX), 280) };
-    }
-  }, [doubleTap, singleTap]);
-
-  const pan = React.useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderTerminationRequest: () => false,
-    onPanResponderGrant: (e) => {
-      posX.stopAnimation(); posY.stopAnimation();
-      const ts = e.nativeEvent.touches;
-      if (ts && ts.length >= 2) {
-        const d = Math.hypot(ts[0].pageX - ts[1].pageX, ts[0].pageY - ts[1].pageY);
-        g.current = { mode: 'pinch', d0: d || 1, s0: z.current.scale };
-        return;
-      }
-      g.current = {
-        mode: z.current.scale > 1 ? 'pan' : 'idle',
-        tx0: z.current.tx, ty0: z.current.ty,
-        locX: e.nativeEvent.locationX, locY: e.nativeEvent.locationY,
-        axis: null, moved: false, dx: 0, dy: 0,
-      };
-    },
-    onPanResponderMove: (e, gesture) => {
-      const s = g.current;
-      const ts = e.nativeEvent.touches;
-      if (s.mode === 'pinch' && ts && ts.length >= 2) {
-        const d = Math.hypot(ts[0].pageX - ts[1].pageX, ts[0].pageY - ts[1].pageY);
-        const ns = Math.max(1, Math.min(4, s.s0 * (d / s.d0)));
-        const [cx, cy] = clampPan(z.current.tx, z.current.ty, ns);
-        setZoom(ns, cx, cy);
-        return;
-      }
-      const mx = gesture.dx, my = gesture.dy;
-      if (Math.abs(mx) > 6 || Math.abs(my) > 6) s.moved = true;
-      if (s.mode === 'pan') {
-        const [cx, cy] = clampPan(s.tx0 + mx, s.ty0 + my, z.current.scale);
-        setZoom(z.current.scale, cx, cy);
-        return;
-      }
-      if (s.mode === 'idle') {
-        if (s.axis == null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) {
-          s.axis = Math.abs(mx) > Math.abs(my) ? 'x' : 'y';
-        }
-        if (s.axis === 'x') {
-          let d = mx;
-          if ((iRef.current === 0 && d > 0) || (iRef.current === n - 1 && d < 0)) d *= 0.32;
-          s.dx = d;
-          posX.setValue(-iRef.current * W + d);
-        } else if (s.axis === 'y') {
-          s.dy = my;
-          posY.setValue(my);
-        }
-      }
-    },
-    onPanResponderRelease: () => {
-      const s = g.current;
-      if (s.mode === 'pinch') { if (z.current.scale < 1.08) resetZoom(); g.current = {}; return; }
-      if (s.mode === 'pan') { g.current = {}; return; }
-      if (s.axis === 'x') {
-        const th = Math.min(90, W * 0.22);
-        if (s.dx <= -th && iRef.current < n - 1) go(iRef.current + 1);
-        else if (s.dx >= th && iRef.current > 0) go(iRef.current - 1);
-        else springX();
-      } else if (s.axis === 'y') {
-        if (Math.abs(s.dy) > 120) nav.closeViewer();
-        else springY();
-      } else if (!s.moved) {
-        handleTap();
-      }
-      g.current = {};
-    },
-    onPanResponderTerminate: () => { springX(); springY(); g.current = {}; },
-  }), [W, n, clampPan, setZoom, resetZoom, go, springX, springY, handleTap, nav, posX, posY]);
+  const toggleChrome = React.useCallback(() => setUi((v) => !v), []);
+  const onDismiss = React.useCallback(() => nav.closeViewer(), [nav]);
+  const onEdgeTap = React.useCallback((dir: -1 | 1) => go(targetRef.current + dir), [go]);
 
   const onLayout = (e: { nativeEvent: { layout: { width: number; height: number } } }) => {
     const { width, height } = e.nativeEvent.layout;
     setVp({ W: width, H: height });
-    posX.setValue(-iRef.current * width);
   };
 
-  const bgOpacity = posY.interpolate({ inputRange: [-600, 0, 600], outputRange: [0.4, 1, 0.4], extrapolate: 'clamp' });
+  const renderPage = React.useCallback((item: ImagePagerItem, k: number) => (
+    <ZoomableImage
+      item={item}
+      active={k === i}
+      W={W}
+      H={H}
+      onZoomChange={setZoomed}
+      onToggleChrome={toggleChrome}
+      onEdgeTap={onEdgeTap}
+      onDismiss={onDismiss}
+    />
+  ), [i, W, H, toggleChrome, onEdgeTap, onDismiss]);
+
   const topTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] });
   const botTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#000', opacity: bgOpacity }} />
-
-      {/* —— 翻页画布 —— */}
-      <Animated.View
-        onLayout={onLayout}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, transform: [{ translateY: posY }] }}
-        {...pan.panHandlers}
-      >
-        {W > 0 && (
-          <Animated.View style={{ flexDirection: 'row', width: W * n, height: '100%', transform: [{ translateX: posX }] }}>
-            {images.map((item, k) => (
-              <View key={k} style={{ width: W, height: '100%', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
-                <Animated.View style={{ width: '100%', height: '100%', transform: k === i ? [{ translateX: zTx }, { translateY: zTy }, { scale: zScale }] : undefined }}>
-                  <ViewerImage item={item} contain />
-                </Animated.View>
-              </View>
-            ))}
-          </Animated.View>
-        )}
-      </Animated.View>
+    <View style={{ flex: 1, backgroundColor: '#000' }} onLayout={onLayout}>
+      {/* —— 翻页画布（原生 ViewPager2 吸附 + 逐页缩放层） —— */}
+      {W > 0 && (
+        <ImagePager
+          ref={pagerRef}
+          images={images}
+          initialIndex={initialIndex}
+          zoomed={zoomed}
+          onIndex={onIndex}
+          renderPage={renderPage}
+        />
+      )}
 
       {/* —— 翻页热区指示（暗底上的 chevron） —— */}
       {ui && !zoomed && !panel && (
@@ -314,9 +175,9 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
       {/* —— 底栏（导航行 + 目录） —— */}
       <Animated.View pointerEvents={ui ? 'auto' : 'none'} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: T.chrome, borderTopWidth: 1, borderTopColor: T.line, paddingHorizontal: 22, paddingTop: 16, paddingBottom: 22, transform: [{ translateY: botTY }] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <Pressable disabled={i === 0} onPress={() => go(i - 1)} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', opacity: i === 0 ? 0.4 : 1 }}><Icon name="back" size={20} color={i === 0 ? T.soft : T.ink} /></Pressable>
-          <View style={{ flex: 1 }}><PageSlider i={i} n={n} onJump={go} /></View>
-          <Pressable disabled={i === n - 1} onPress={() => go(i + 1)} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', opacity: i === n - 1 ? 0.4 : 1 }}><Icon name="chevRight" size={20} color={i === n - 1 ? T.soft : T.ink} /></Pressable>
+          <Pressable disabled={i === 0} onPress={() => go(targetRef.current - 1)} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', opacity: i === 0 ? 0.4 : 1 }}><Icon name="back" size={20} color={i === 0 ? T.soft : T.ink} /></Pressable>
+          <View style={{ flex: 1 }}><PageSlider i={i} n={n} onJump={jump} /></View>
+          <Pressable disabled={i === n - 1} onPress={() => go(targetRef.current + 1)} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', opacity: i === n - 1 ? 0.4 : 1 }}><Icon name="chevRight" size={20} color={i === n - 1 ? T.soft : T.ink} /></Pressable>
         </View>
         <View style={{ flexDirection: 'row', justifyContent: 'center', borderTopWidth: 1, borderTopColor: T.line, marginTop: 10, paddingTop: 6 }}>
           <Pressable onPress={() => setPanel('grid')} style={{ flexDirection: 'column', alignItems: 'center', gap: 5, paddingVertical: 6, paddingHorizontal: 40 }}>
@@ -340,8 +201,8 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
                 {images.map((item, k) => {
                   const cur = k === i;
                   return (
-                    <View key={k} style={{ width: '33.333%', paddingHorizontal: 6, marginBottom: 12 }}>
-                      <Pressable onPress={() => { go(k); setPanel(null); }}>
+                    <View key={String(item.src ?? k)} style={{ width: '33.333%', paddingHorizontal: 6, marginBottom: 12 }}>
+                      <Pressable onPress={() => { jump(k); setPanel(null); }}>
                         <View style={{ aspectRatio: 0.7, borderRadius: 9, overflow: 'hidden', borderWidth: cur ? 2.5 : 1, borderColor: cur ? T.accent : T.line }}>
                           <ViewerImage item={item} />
                         </View>

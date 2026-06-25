@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Pressable, Image, TextInput, StyleProp, ViewStyle, ImageStyle } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleProp, ViewStyle, ImageStyle } from 'react-native';
+import CachedImage from './CachedImage';
 import Svg, { Rect, Path, Circle, Defs, Pattern } from 'react-native-svg';
 import Icon from './Icon';
 import { useTheme, FONTS, Theme } from '../theme';
@@ -81,7 +82,7 @@ export function Avatar({ user, size = 44, radius, uri }: { user?: AvatarUser | n
   const box: ImageStyle = { width: size, height: size, borderRadius: br, backgroundColor: t.card2, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' };
   React.useEffect(() => { setErr(false); }, [src]);
   if (src && !err) {
-    return <Image source={{ uri: src }} onError={() => setErr(true)} style={box} />;
+    return <CachedImage source={{ uri: src }} onError={() => setErr(true)} contentFit="cover" recyclingKey={src} style={box} />;
   }
   const label = (user && user.avatar) || (user && user.name && user.name[0]) || '?';
   return (
