@@ -1,6 +1,10 @@
 import { __private } from '../src/api';
 
 describe('API mappers', () => {
+  beforeEach(() => {
+    __private.clearFavoriteIndexForTests();
+  });
+
   test('board mapper defaults missing arrays and excludes pinned rows from threads', () => {
     const board = __private.mapBoardData({
       forum: { fid: '5', name: '版块', threadcount: '2' },
@@ -78,5 +82,40 @@ describe('API mappers', () => {
     expect(result.list).toHaveLength(2);
     expect(result.perpage).toBe(2);
     expect(result.totalPages).toBe(1);
+  });
+
+  test('favorite pages hydrate the in-memory favorite index', () => {
+    const result = __private.mapCollections({
+      count: '45',
+      perpage: '20',
+      page: '2',
+      list: [
+        { idtype: 'tid', id: '100', favid: '9', title: '收藏帖', author: '作者' },
+        { idtype: 'uid', id: 'ignored', title: '用户收藏' },
+      ],
+    }, 2);
+
+    __private.rememberFavoritePage(result);
+
+    expect(__private.cachedFavoriteState('100')).toEqual({ favorited: true, favid: '9' });
+    expect(__private.favoriteIndexSnapshotForTests()).toEqual({
+      states: [['100', { favorited: true, favid: '9' }]],
+      observedPages: [2],
+      totalPages: 3,
+    });
+  });
+
+  test('favorite lookup policy is bounded unless full scan is requested', () => {
+    expect(__private.FAVORITE_LOOKUP_PAGE_LIMIT).toBe(3);
+    expect(__private.favoriteScanLimit(10, false)).toBe(3);
+    expect(__private.favoriteScanLimit(2, false)).toBe(2);
+    expect(__private.favoriteScanLimit(10, true)).toBe(10);
+  });
+
+  test('full scans bypass negative cached favorite states without favids', () => {
+    __private.rememberFavoriteState('404', { favorited: false });
+
+    expect(__private.cachedFavoriteState('404')).toEqual({ favorited: false });
+    expect(__private.cachedFavoriteState('404', true)).toBeNull();
   });
 });

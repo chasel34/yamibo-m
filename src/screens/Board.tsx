@@ -32,12 +32,16 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
   const [refreshing, setRefreshing] = React.useState(false);
   const [paging, setPaging] = React.useState(false);
   const scRef = React.useRef<ScrollView>(null);
+  const requestVersion = React.useRef(0);
 
   const load = React.useCallback(async (tid: string | number, srt: SortMode, isRefresh?: boolean) => {
+    const version = ++requestVersion.current;
     if (isRefresh) setRefreshing(true);
+    setPaging(false);
     setError(null);
     try {
       const r = await getBoard(fid, 1, tid, srt);
+      if (version !== requestVersion.current) return;
       setBoard((b: any) => ({ ...b, ...r.board }));
       setTypes(r.types);
       setSubs(r.subs);
@@ -48,9 +52,10 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
       setTotalThreads(r.totalThreads);
       setTpp(r.tpp);
     } catch (e) {
+      if (version !== requestVersion.current) return;
       if (items === null) setError(e.message); else nav.toast(e.message);
     } finally {
-      setRefreshing(false);
+      if (version === requestVersion.current) setRefreshing(false);
     }
   }, [fid, items, nav]);
 
@@ -58,9 +63,11 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
 
   const goPage = async (n: number) => {
     if (paging || n === page) return;
+    const version = ++requestVersion.current;
     setPaging(true);
     try {
       const r = await getBoard(fid, n, typeid, sort);
+      if (version !== requestVersion.current) return;
       setItems(r.threads);
       setPage(n);
       setTotalPages(r.totalPages);
@@ -68,9 +75,10 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
       setTpp(r.tpp);
       scRef.current?.scrollTo({ y: 0, animated: false });
     } catch (e) {
+      if (version !== requestVersion.current) return;
       nav.toast(e.message);
     } finally {
-      setPaging(false);
+      if (version === requestVersion.current) setPaging(false);
     }
   };
 
