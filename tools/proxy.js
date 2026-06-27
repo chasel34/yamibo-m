@@ -20,7 +20,12 @@ const TARGET = 'https://bbs.yamibo.com';
 const PORT = process.env.PROXY_PORT || 8089;
 const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36 yamibo-m/1.0';
 const ALLOWED_PROXY_ORIGINS = new Set([TARGET]);
-const ALLOWED_CORS_ORIGINS = new Set(['http://localhost:8085', 'http://127.0.0.1:8085']);
+const EXTRA_CORS_ORIGINS = (process.env.PROXY_CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const ALLOWED_CORS_ORIGINS = new Set(EXTRA_CORS_ORIGINS);
+const LOOPBACK_CORS_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 // Single in-memory cookie jar (one dev session).
 const jar = new Map();
@@ -60,6 +65,22 @@ function isAllowedProxyUrl(input) {
   return !!url && ALLOWED_PROXY_ORIGINS.has(url.origin);
 }
 
+function resolveAllowedProxyTarget(reqUrl) {
+  try {
+    const target = new URL(reqUrl, TARGET);
+    return isAllowedProxyUrl(target) ? target : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return true;
+  if (ALLOWED_CORS_ORIGINS.has(origin)) return true;
+  const url = parseHttpUrl(origin);
+  return !!url && LOOPBACK_CORS_HOSTS.has(url.hostname);
+}
+
 function writeInvalidUrl(res, message) {
   res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end(message);
@@ -67,8 +88,8 @@ function writeInvalidUrl(res, message) {
 
 function setCorsHeaders(req, res) {
   const origin = req.headers.origin;
-  if (!origin || ALLOWED_CORS_ORIGINS.has(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin || 'http://localhost:8085');
+  if (isAllowedCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || 'http://localhost:8081');
     res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -164,7 +185,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const target = new URL(req.url, TARGET);
+  const target = resolveAllowedProxyTarget(req.url);
+  if (!target) {
+    writeInvalidUrl(res, 'URL is not allowed');
+    return;
+  }
   const chunks = [];
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
@@ -211,6 +236,8 @@ module.exports = {
   ALLOWED_CORS_ORIGINS,
   parseHttpUrl,
   isAllowedProxyUrl,
+  isAllowedCorsOrigin,
+  resolveAllowedProxyTarget,
   setCorsHeaders,
   server,
 };

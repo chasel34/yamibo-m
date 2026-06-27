@@ -146,6 +146,84 @@ function messageCode(message?: any): string {
 }
 
 const SUCCESS_MESSAGES = new Set(['login_succeed', 'logout_succeed', 'favorite_do_success', 'favorite_repeat']);
+const API_TIMEOUT_MS = 15000;
+const HTML_TIMEOUT_MS = 20000;
+
+class TimeoutError extends Error {
+  constructor() {
+    super('request timed out');
+    this.name = 'TimeoutError';
+  }
+}
+
+function timeoutError(): TimeoutError {
+  return new TimeoutError();
+}
+
+function isTimeoutError(err: unknown): boolean {
+  return err instanceof TimeoutError || (err instanceof Error && err.name === 'TimeoutError');
+}
+
+async function fetchWithTimeout(
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit = {},
+  timeoutMs = API_TIMEOUT_MS,
+  fetcher: typeof fetch = fetch,
+): Promise<Response> {
+  const externalSignal = init.signal;
+  const Controller = typeof AbortController === 'undefined' ? null : AbortController;
+  let timedOut = false;
+
+  if (!Controller) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        fetcher(input, init),
+        new Promise<Response>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            reject(timeoutError());
+          }, timeoutMs);
+        }),
+      ]);
+    } catch (e) {
+      if (timedOut) throw timeoutError();
+      throw e;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  const controller = new Controller();
+  const abortFromExternal = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener?.('abort', abortFromExternal, { once: true });
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetcher(input, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (timedOut) throw timeoutError();
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    externalSignal?.removeEventListener?.('abort', abortFromExternal);
+  }
+}
+
+function apiNetworkError(module: string, timedOut: boolean): ApiError {
+  return new ApiError(
+    Platform.OS === 'web' ? 'proxy_unavailable' : 'network',
+    timedOut
+      ? (Platform.OS === 'web' ? '请求超时，请确认本地代理仍在运行后重试' : '请求超时，请检查网络后重试')
+      : (Platform.OS === 'web' ? '无法连接本地代理，请确认 npm run proxy 正在运行' : '网络连接失败，请稍后重试'),
+    { module },
+  );
+}
 
 function businessMessage(val: string, text: string): string {
   const raw = `${val} ${text}`;
@@ -203,13 +281,9 @@ async function requestOnce(module: string, params: Record<string, any>, { method
   }
   let res: Response;
   try {
-    res = await fetch(`${BASE}?${qs}`, opts);
+    res = await fetchWithTimeout(`${BASE}?${qs}`, opts, API_TIMEOUT_MS);
   } catch (e) {
-    throw new ApiError(
-      Platform.OS === 'web' ? 'proxy_unavailable' : 'network',
-      Platform.OS === 'web' ? '无法连接本地代理，请确认 npm run proxy 正在运行' : '网络连接失败，请稍后重试',
-      { module },
-    );
+    throw apiNetworkError(module, isTimeoutError(e));
   }
   const text = await res.text();
   if (!res.ok) {
@@ -452,18 +526,23 @@ export async function getReadingStream(tid: string, authorid: string, page = 1):
 
 export async function resolvePostPage(tid: string, pid: string): Promise<number> {
   const target = `${HOST}/forum.php?mod=redirect&goto=findpost&ptid=${encodeURIComponent(tid)}&pid=${encodeURIComponent(pid)}`;
-  if (Platform.OS === 'web') {
-    const res = await fetch(`${PROXY}/__resolve?url=${encodeURIComponent(target)}`);
-    if (!res.ok) throw new Error('无法定位章节评论');
-    const data = await res.json();
-    const match = String(data.url || '').match(/[?&]page=(\d+)/);
+  try {
+    if (Platform.OS === 'web') {
+      const res = await fetchWithTimeout(`${PROXY}/__resolve?url=${encodeURIComponent(target)}`, {}, HTML_TIMEOUT_MS);
+      if (!res.ok) throw new Error('无法定位章节评论');
+      const data = await res.json();
+      const match = String(data.url || '').match(/[?&]page=(\d+)/);
+      if (!match) throw new Error('无法定位章节评论');
+      return parseInt(match[1], 10);
+    }
+    const res = await fetchWithTimeout(target, { redirect: 'follow' }, HTML_TIMEOUT_MS);
+    const match = String(res.url || '').match(/[?&]page=(\d+)/);
     if (!match) throw new Error('无法定位章节评论');
     return parseInt(match[1], 10);
+  } catch (e) {
+    if (isTimeoutError(e)) throw new Error('定位请求超时，请稍后重试');
+    throw e;
   }
-  const res = await fetch(target, { redirect: 'follow' });
-  const match = String(res.url || '').match(/[?&]page=(\d+)/);
-  if (!match) throw new Error('无法定位章节评论');
-  return parseInt(match[1], 10);
 }
 
 export async function getChapterComments(tid: string, pid: string, authorid: string, pageHint?: number): Promise<ReadingComment[]> {
@@ -530,9 +609,60 @@ export async function getProfile(uid?: string): Promise<{ user: UserProfile }> {
 }
 
 // ===================== Collections (myfavthread) =====================
+type ThreadFavoriteState = { favorited: boolean; favid?: string };
+const FAVORITE_LOOKUP_PAGE_LIMIT = 3;
+const favoriteByTid = new Map<string, ThreadFavoriteState>();
+const observedFavoritePages = new Set<number>();
+let favoriteTotalPages: number | undefined;
+
+function normalizeFavoriteState(state: ThreadFavoriteState): ThreadFavoriteState {
+  return state.favorited ? { favorited: true, favid: state.favid } : { favorited: false };
+}
+
+function rememberFavoriteState(tid: string, state: ThreadFavoriteState): ThreadFavoriteState {
+  const normalized = normalizeFavoriteState(state);
+  if (tid) favoriteByTid.set(tid, normalized);
+  return normalized;
+}
+
+function rememberFavoritePage(result: ListResult<CollectionItem>): void {
+  observedFavoritePages.add(result.page);
+  favoriteTotalPages = result.totalPages;
+  result.list.forEach((item) => {
+    rememberFavoriteState(item.tid, { favorited: true, favid: item.favid });
+  });
+}
+
+function favoriteScanLimit(totalPages: number, fullScan?: boolean): number {
+  return fullScan ? totalPages : Math.min(totalPages, FAVORITE_LOOKUP_PAGE_LIMIT);
+}
+
+function cachedFavoriteState(tid: string, fullScan?: boolean): ThreadFavoriteState | null {
+  const cached = favoriteByTid.get(tid);
+  if (!cached) return null;
+  if (!fullScan || (cached.favorited && cached.favid)) return { ...cached };
+  return null;
+}
+
+function clearFavoriteIndexForTests(): void {
+  favoriteByTid.clear();
+  observedFavoritePages.clear();
+  favoriteTotalPages = undefined;
+}
+
+function favoriteIndexSnapshotForTests() {
+  return {
+    states: Array.from(favoriteByTid.entries()),
+    observedPages: Array.from(observedFavoritePages.values()).sort((a, b) => a - b),
+    totalPages: favoriteTotalPages,
+  };
+}
+
 export async function getCollections(page = 1): Promise<ListResult<CollectionItem>> {
   const v = variablesOf(await request('myfavthread', { page }));
-  return mapCollections(v, page);
+  const result = mapCollections(v, page);
+  rememberFavoritePage(result);
+  return result;
 }
 
 function mapCollections(v: Record<string, any>, page = 1): ListResult<CollectionItem> {
@@ -548,20 +678,23 @@ function mapCollections(v: Record<string, any>, page = 1): ListResult<Collection
   return { list, ...paginationFor(v, list.length, page) };
 }
 
-export async function getThreadFavorite(tid: string): Promise<{ favorited: boolean; favid?: string }> {
+export async function getThreadFavorite(tid: string, opts: { fullScan?: boolean } = {}): Promise<{ favorited: boolean; favid?: string }> {
+  const cached = cachedFavoriteState(tid, opts.fullScan);
+  if (cached) return cached;
+
   let page = 1;
   while (true) {
     const v = variablesOf(await request('myfavthread', { page }));
-    const list = asArray(v.list).map(asRecord);
-    const found = list.find((it: any) => it.idtype === 'tid' && asString(it.id) === tid);
-    if (found) return { favorited: true, favid: asString(found.favid) || undefined };
-    const perpage = asPositiveInt(v.perpage, list.length || 20);
-    const count = asInt(v.count, list.length);
-    const totalPages = count > 0 ? Math.max(1, Math.ceil(count / perpage)) : page;
-    if (page >= totalPages || list.length === 0) break;
+    const result = mapCollections(v, page);
+    rememberFavoritePage(result);
+    const found = result.list.find((it) => it.tid === tid);
+    if (found) return rememberFavoriteState(tid, { favorited: true, favid: found.favid });
+    const totalPages = result.totalPages || page;
+    const scanLimit = favoriteScanLimit(totalPages, opts.fullScan);
+    if (page >= scanLimit || result.list.length === 0) break;
     page += 1;
   }
-  return { favorited: false };
+  return rememberFavoriteState(tid, { favorited: false });
 }
 
 async function currentFormhash(): Promise<string> {
@@ -572,45 +705,50 @@ export async function addThreadFavorite(tid: string): Promise<{ favorited: true;
   const formhash = await currentFormhash();
   const r = await request('favthread', { id: tid, idtype: 'tid', formhash }, { method: 'POST', body: '' });
   const val = messageCode(r.Message);
-  const favorite = await getThreadFavorite(tid).catch(() => ({ favorited: true as const, favid: undefined }));
+  const favorite = await getThreadFavorite(tid, { fullScan: true })
+    .catch(() => rememberFavoriteState(tid, { favorited: true }));
+  const next = favorite.favorited ? favorite : rememberFavoriteState(tid, { favorited: true });
   return {
     favorited: true,
-    favid: favorite.favid,
+    favid: next.favid,
     message: val === 'favorite_repeat' ? '已经收藏过了' : '已收藏',
   };
 }
 
 export async function removeThreadFavorite(tid: string, favid?: string): Promise<{ favorited: false; message: string }> {
-  const favorite = favid ? { favorited: true, favid } : await getThreadFavorite(tid);
-  if (!favorite.favid) return { favorited: false, message: '已取消收藏' };
+  const favorite = favid ? { favorited: true, favid } : await getThreadFavorite(tid, { fullScan: true });
+  if (!favorite.favid) {
+    rememberFavoriteState(tid, { favorited: false });
+    return { favorited: false, message: '已取消收藏' };
+  }
 
   const formhash = await currentFormhash();
   const url = `${Platform.OS === 'web' ? PROXY : HOST}/home.php?mod=spacecp&ac=favorite&op=delete&favid=${encodeURIComponent(favorite.favid)}`;
   const body = new URLSearchParams({ deletesubmit: 'true', formhash }).toString();
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetchWithTimeout(url, {
       method: 'POST',
       headers: { Accept: 'text/html,*/*', 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
       credentials: Platform.OS === 'web' ? 'omit' : undefined,
-    } as RequestInit);
+    } as RequestInit, HTML_TIMEOUT_MS);
   } catch (e) {
-    throw new ApiError(
-      Platform.OS === 'web' ? 'proxy_unavailable' : 'network',
-      Platform.OS === 'web' ? '无法连接本地代理，请确认 npm run proxy 正在运行' : '网络连接失败，请稍后重试',
-      { module: 'favorite_delete' },
-    );
+    throw apiNetworkError('favorite_delete', isTimeoutError(e));
   }
   const text = await res.text();
   if (!res.ok) {
     throw new ApiError('http', `服务器暂时不可用（${res.status}），请稍后重试`, { module: 'favorite_delete', status: res.status, snippet: snippet(text) });
   }
   if (/操作成功|favorite_delete_succeed|删除成功/i.test(text)) {
+    rememberFavoriteState(tid, { favorited: false });
     return { favorited: false, message: '已取消收藏' };
   }
   const bodySnippet = snippet(text);
-  if (/收藏不存在|favorite_does_not_exist/i.test(text)) return { favorited: false, message: '已取消收藏' };
+  if (/收藏不存在|favorite_does_not_exist/i.test(text)) {
+    rememberFavoriteState(tid, { favorited: false });
+    return { favorited: false, message: '已取消收藏' };
+  }
   if (/formhash|表单验证|请求来路不正确/i.test(text)) {
     throw new ApiError('business', '取消收藏失败，请刷新后重试', { module: 'favorite_delete', snippet: bodySnippet });
   }
@@ -677,4 +815,18 @@ export const __private = {
   mapReminders,
   mapPMs,
   paginationFor,
+  FAVORITE_LOOKUP_PAGE_LIMIT,
+  rememberFavoritePage,
+  rememberFavoriteState,
+  favoriteScanLimit,
+  cachedFavoriteState,
+  clearFavoriteIndexForTests,
+  favoriteIndexSnapshotForTests,
+  API_TIMEOUT_MS,
+  HTML_TIMEOUT_MS,
+  TimeoutError,
+  fetchWithTimeout,
+  isTimeoutError,
+  shouldRetry,
+  apiNetworkError,
 };
