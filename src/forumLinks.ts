@@ -22,6 +22,14 @@ function pidFromHash(hash: string): string | undefined {
   return firstNumber(hash.match(/pid(\d+)/i)?.[1], hash.match(/#?(\d+)/)?.[1]);
 }
 
+function safeDecodePath(pathname: string): string {
+  try {
+    return decodeURIComponent(pathname);
+  } catch (e) {
+    return pathname;
+  }
+}
+
 export function parseForumLink(href?: string | null): ForumLinkTarget | null {
   if (!href) return null;
   let url: URL;
@@ -32,7 +40,7 @@ export function parseForumLink(href?: string | null): ForumLinkTarget | null {
   }
   if (url.hostname !== 'bbs.yamibo.com') return null;
 
-  const path = decodeURIComponent(url.pathname);
+  const path = safeDecodePath(url.pathname);
   const qs = url.searchParams;
   const mod = String(qs.get('mod') || '').toLowerCase();
   const pid = firstNumber(qs.get('pid'), pidFromHash(url.hash));
