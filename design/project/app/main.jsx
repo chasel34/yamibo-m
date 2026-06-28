@@ -1,5 +1,20 @@
 const { StatusBar: SBm, TabBar: TBm } = window;
 
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "updateScenario": "ota",
+  "autoCheck": true,
+  "accent": "#ad473c",
+  "replayNonce": 0
+}/*EDITMODE-END*/;
+
+const SCENARIO_OPTS = [
+  { value: "ota", label: "有 OTA 小更新" },
+  { value: "none", label: "已是最新版本" },
+  { value: "native", label: "大版本（新安装包）" },
+  { value: "error", label: "检查失败" },
+  { value: "unsupported", label: "不支持在线更新" },
+];
+
 // Push layer: timeout-driven transition (works even when CSS animation clock is throttled).
 // Resting state is forced with transition:none once settled, so content is never stuck off-screen.
 function PushLayer({exiting, children}){
@@ -37,6 +52,13 @@ const SCREENS = {
 const TAB_SCREENS = { forum:1, messages:1, mine:1 };
 
 function App(){
+  const [t, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
+  React.useEffect(()=>{
+    if(t.accent){
+      document.documentElement.style.setProperty("--accent", t.accent);
+      document.documentElement.style.setProperty("--accent-ink", t.accent);
+    }
+  }, [t.accent]);
   const [theme, setThemeState] = React.useState(()=> localStorage.getItem("yh_theme") || "light");
   const [booted, setBooted] = React.useState(()=> localStorage.getItem("yh_booted")==="1");
   const [activeTab, setActiveTab] = React.useState("forum");
@@ -77,7 +99,21 @@ function App(){
   const login = ()=>{ setBooted(true); localStorage.setItem("yh_booted","1"); };
   const logout = ()=>{ setStack([]); setActiveTab("forum"); setBooted(false); localStorage.removeItem("yh_booted"); toast("已退出登录"); };
 
-  const nav = { push, pop, switchTab, openViewer, closeViewer, login, logout, toast, theme, setTheme };
+  // —— 应用更新控制器 ——
+  const scenarioRef = React.useRef(t.updateScenario);
+  scenarioRef.current = t.updateScenario;
+  const updater = window.useUpdater(()=> scenarioRef.current, toast);
+  updater._goDownload = ()=> toast("将打开发布页 · "+window.UPDATE_INFO.native.where);
+
+  // 启动静默检查（一次；改变场景/开关或重放时重新触发）
+  const launchRef = React.useRef(updater.launchSilentCheck);
+  launchRef.current = updater.launchSilentCheck;
+  React.useEffect(()=>{
+    if(booted && t.autoCheck){ launchRef.current(); }
+  }, [booted, t.autoCheck, t.updateScenario, t.replayNonce]);
+
+  const nav = { push, pop, switchTab, openViewer, closeViewer, login, logout, toast, theme, setTheme,
+    checkUpdate: updater.openCheck, updateStaged: updater.staged };
 
   const tabBarVisible = stack.length===0 && TAB_SCREENS[activeTab];
 
@@ -113,9 +149,27 @@ function App(){
           </div>
         )}
 
+        {/* 应用更新：底部弹层 / 轻提示 / 重启遮罩 */}
+        {booted && <window.UpdateSheet ctrl={updater}/>}
+        {booted && <window.UpdateReadyBanner ctrl={updater}/>}
+        <window.RestartOverlay on={updater.restarting}/>
+
         <window.Toast msg={toastMsg}/>
         {booted && <div className="home-indicator"></div>}
       </div>
+
+      <window.TweaksPanel title="Tweaks">
+        <window.TweakSection label="更新演示"/>
+        <window.TweakSelect label="检查结果" value={t.updateScenario} options={SCENARIO_OPTS}
+          onChange={(v)=> setTweak("updateScenario", v)}/>
+        <window.TweakToggle label="启动时静默检查" value={t.autoCheck}
+          onChange={(v)=> setTweak("autoCheck", v)}/>
+        <window.TweakButton label="重放启动轻提示" onClick={()=> setTweak("replayNonce", (t.replayNonce||0)+1)}/>
+        <window.TweakSection label="外观"/>
+        <window.TweakColor label="主色" value={t.accent}
+          options={["#ad473c","#b9683a","#8a5575","#3f7d6b"]}
+          onChange={(v)=> setTweak("accent", v)}/>
+      </window.TweaksPanel>
     </window.Nav.Provider>
   );
 }

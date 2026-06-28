@@ -164,12 +164,44 @@ const SettingsScreen = () => {
           </div>
         </div>
 
+        <div className="kicker" style={{ padding: "24px 22px 11px" }}>应用</div>
+        <div className="card" style={{ margin: "0 16px", overflow: "hidden" }}>
+          <div className="listrow">
+            <span className="lr-ic"><I3 name="info" size={20} /></span>
+            <span className="lr-title">当前版本</span>
+            <span className="lr-sub">{window.UPDATE_INFO.current}</span>
+          </div>
+          <div className="hr" style={{ margin: "0 18px 0 57px" }}></div>
+          <UpdateRow />
+        </div>
+
         <div style={{ height: 24 }}></div>
       </div>
     </>);
 
 };
-// 字号档位映射到阅读器使用的 localStorage(yh_rd_font · RFONTS 索引 0-4)
+
+// 状态胶囊（柔色）
+const StagedChip = () => (
+  <span style={{ display: "inline-flex", alignItems: "center", height: 26, padding: "0 11px", borderRadius: 999,
+    background: "var(--accent-soft)", color: "var(--accent-ink)", fontFamily: "var(--font-head)", fontSize: 12.5, fontWeight: 600, letterSpacing: ".2px" }}>重启生效</span>
+);
+
+// 检查更新行：常态显示「检查更新」；已下载就绪时提示重启生效
+const UpdateRow = () => {
+  const nav = window.useNav();
+  const staged = nav.updateStaged;
+  return (
+    <div className="listrow click" onClick={() => nav.checkUpdate()}>
+      <span className="lr-ic" style={{ color: staged ? "var(--accent)" : undefined }}><I3 name="refresh" size={20} /></span>
+      <span className="lr-title" style={{ flex: "0 0 auto" }}>检查更新</span>
+      <span style={{ flex: 1 }}></span>
+      {staged
+        ? <StagedChip />
+        : <I3 name="chevRight" size={18} style={{ color: "var(--faint)" }} />}
+    </div>
+  );
+};
 // 小 → 16px(idx0), 中 → 20px(idx2), 大 → 24px(idx4)
 const FONT_BTN_TO_IDX = [0, 2, 4];
 const readFontBtn = () => {
@@ -262,13 +294,21 @@ const AboutScreen = () => {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "34px 30px 0" }}>
           <window.Lily size={56} stroke={1.5} />
           <div className="headline" style={{ fontSize: 22, letterSpacing: "2px", marginTop: 18 }}>百合会</div>
-          <div className="timestamp" style={{ fontSize: 13, marginTop: 7 }}>阅读客户端 v1.0</div>
+          <div className="timestamp" style={{ fontSize: 13, marginTop: 7 }}>阅读客户端 {window.UPDATE_INFO.current}</div>
           <div className="serif" style={{ fontSize: 14.5, color: "var(--ink-soft)", marginTop: 20, lineHeight: 1.75, maxWidth: 280 }}>
             一个温柔、清爽的第三方阅读客户端。当前版本仅支持浏览与登录，写操作将在后续版本中陆续开放。
           </div>
         </div>
         <div style={{ height: 34 }}></div>
         <div className="feed-div"></div>
+        <div className="flatrow click" onClick={() => nav.checkUpdate()}>
+          <span style={{ display: "flex", color: nav.updateStaged ? "var(--accent)" : "var(--ink-soft)", flex: "0 0 auto" }}><I3 name="refresh" size={21} /></span>
+          <span style={{ flex: 1, fontFamily: "var(--font-head)", fontSize: 15.5, fontWeight: 500, color: "var(--ink)" }}>检查更新</span>
+          {nav.updateStaged
+            ? <StagedChip />
+            : <I3 name="chevRight" size={18} style={{ color: "var(--faint)", marginLeft: 8 }} />}
+        </div>
+        <div className="feed-div" style={{ margin: "0 22px 0 56px" }}></div>
         <MRow icon="doc" label="社区规范" onClick={() => nav.toast("将跳转网页")} />
         <div className="feed-div" style={{ margin: "0 22px 0 56px" }}></div>
         <MRow icon="info" label="版权声明" onClick={() => nav.toast("将跳转网页")} />
