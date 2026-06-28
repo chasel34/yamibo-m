@@ -16,15 +16,27 @@ export default function CollectionsScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
   const [paging, setPaging] = React.useState(false);
   const dataRef = React.useRef(data);
+  const requestVersion = React.useRef(0);
   dataRef.current = data;
 
   const load = React.useCallback(async (targetPage = 1, isRefresh?: boolean) => {
+    const version = ++requestVersion.current;
     if (isRefresh) setRefreshing(true);
     else if (dataRef.current) setPaging(true);
     setError(null);
-    try { const r = await getCollections(targetPage); setData(r); }
-    catch (e) { if (!dataRef.current) setError(e.message); else nav.toast(e.message); }
-    finally { setRefreshing(false); setPaging(false); }
+    try {
+      const r = await getCollections(targetPage);
+      if (version !== requestVersion.current) return;
+      setData(r);
+    } catch (e) {
+      if (version !== requestVersion.current) return;
+      if (!dataRef.current) setError(e.message); else nav.toast(e.message);
+    } finally {
+      if (version === requestVersion.current) {
+        setRefreshing(false);
+        setPaging(false);
+      }
+    }
   }, [nav]);
   React.useEffect(() => { load(1, false); }, []); // eslint-disable-line
 

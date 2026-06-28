@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test
+        run: npm test -- --runInBand
+
       - name: Check Expo token
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
@@ -44,7 +47,7 @@ jobs:
 
       - name: Build Android APK with EAS
         run: |
-          npx eas-cli@latest build \
+          npx eas-cli@16.0.1 build \
             --platform android \
             --profile preview \
             --non-interactive \

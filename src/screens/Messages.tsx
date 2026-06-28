@@ -11,6 +11,7 @@ import type { ListResult, Reminder, PMItem } from '../types';
 
 type Seg = 'remind' | 'dm';
 type ListsState = { remind: ListResult<Reminder> | null; dm: ListResult<PMItem> | null };
+type ErrorsState = Record<Seg, string | null>;
 const SEGS = {
   remind: { fetch: getReminders },
   dm: { fetch: getPMs },
@@ -21,24 +22,34 @@ export default function MessagesScreen() {
   const { t } = useTheme();
   const [seg, setSeg] = React.useState<Seg>('remind');
   const [lists, setLists] = React.useState<ListsState>({ remind: null, dm: null });
-  const [error, setError] = React.useState<string | null>(null);
-  const [refreshing, setRefreshing] = React.useState(false);
+  const [errors, setErrors] = React.useState<ErrorsState>({ remind: null, dm: null });
+  const [refreshing, setRefreshing] = React.useState<Seg | null>(null);
   const [paging, setPaging] = React.useState<Seg | null>(null);
   const listsRef = React.useRef(lists);
+  const requestVersions = React.useRef<Record<Seg, number>>({ remind: 0, dm: 0 });
   listsRef.current = lists;
 
   const load = React.useCallback(async (which: Seg, targetPage = 1, isRefresh?: boolean) => {
-    if (isRefresh) setRefreshing(true);
+    const version = ++requestVersions.current[which];
+    if (isRefresh) setRefreshing(which);
     else if (listsRef.current[which]) setPaging(which);
-    setError(null);
+    setErrors((prev) => ({ ...prev, [which]: null }));
     try {
       const r = await SEGS[which].fetch(targetPage);
+      if (version !== requestVersions.current[which]) return;
       setLists((prev) => ({ ...prev, [which]: r }));
     } catch (e) {
-      if (listsRef.current[which] === null) setError(e.message); else nav.toast(e.message);
+      if (version !== requestVersions.current[which]) return;
+      if (listsRef.current[which] === null) {
+        setErrors((prev) => ({ ...prev, [which]: e.message }));
+      } else {
+        nav.toast(e.message);
+      }
     } finally {
-      setRefreshing(false);
-      setPaging(null);
+      if (version === requestVersions.current[which]) {
+        setRefreshing((prev) => (prev === which ? null : prev));
+        setPaging((prev) => (prev === which ? null : prev));
+      }
     }
   }, [nav]);
 
@@ -50,9 +61,10 @@ export default function MessagesScreen() {
   const reminders = lists.remind?.list || null;
   const dms = lists.dm?.list || null;
   const active = lists[seg];
+  const activeError = errors[seg];
   const refresh = () => load(seg, 1, true);
   const goPage = (page: number) => {
-    if (!active || paging || page === active.page) return;
+    if (!active || paging === seg || page === active.page) return;
     load(seg, page, false);
   };
   const loadingThis = lists[seg] === null;
@@ -74,12 +86,12 @@ export default function MessagesScreen() {
       </View>
       <Divider />
 
-      {error ? <ErrorView message={error} onRetry={refresh} />
+      {activeError ? <ErrorView message={activeError} onRetry={refresh} />
         : loadingThis ? <Loader label="加载…" />
         : (
           <ScrollView
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={t.accent} colors={[t.accent]} />}
+            refreshControl={<RefreshControl refreshing={refreshing === seg} onRefresh={refresh} tintColor={t.accent} colors={[t.accent]} />}
           >
             {seg === 'remind' ? (
               reminders!.length === 0 ? <EmptyState label="还没有提醒" sub="有人找你时会出现在这里" /> : reminders!.map((r, i) => (
