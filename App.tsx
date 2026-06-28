@@ -12,6 +12,7 @@ import { setUiFontScale, uiFontScaleForLevel, UI_FONT_LEVEL_KEY } from './src/ui
 import { ThemeContext, THEMES, useTheme } from './src/theme';
 import { ToastProvider, useToast, AuthContext } from './src/context';
 import { checkAuth, logout as apiLogout } from './src/api';
+import { AppUpdatesProvider } from './src/appUpdates';
 import { Toast } from './src/components/ui';
 import TabBar from './src/components/TabBar';
 import type { ThemeName, RootStackParamList } from './src/types';
@@ -120,7 +121,9 @@ function Shell() {
   const { t } = useTheme();
   return (
     <PhoneFrame>
-      <RootNavigator />
+      <AppUpdatesProvider>
+        <RootNavigator />
+      </AppUpdatesProvider>
       <ToastLayer />
       <HomeIndicator />
       <ExpoStatusBar style={t.name === 'dark' ? 'light' : 'dark'} hidden />
