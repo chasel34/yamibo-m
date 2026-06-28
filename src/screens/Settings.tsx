@@ -5,6 +5,7 @@ import Icon from '../components/Icon';
 import { NavHeader, Toggle, Kicker, HLine } from '../components/ui';
 import { useNav } from '../useNav';
 import { useTheme, FONTS, cardShadow } from '../theme';
+import { UpdateInfoRows, useAppUpdates } from '../appUpdates';
 
 // iOS-style grouped card + row (the only place cards appear, per the design).
 function Card({ children }: { children?: React.ReactNode }) {
@@ -36,6 +37,7 @@ function FontSizePicker() {
 export default function SettingsScreen() {
   const nav = useNav();
   const { t, theme } = useTheme();
+  const { openCheck } = useAppUpdates();
   const lrIc = (name: string) => <View style={{ width: 26, alignItems: 'center' }}><Icon name={name} size={20} color={t.inkSoft} /></View>;
   const lrTitle = (txt: string, color?: string) => <Text style={{ fontFamily: FONTS.head, fontSize: 15.5, fontWeight: '500', color: color || t.ink, flex: 1 }}>{txt}</Text>;
 
@@ -62,6 +64,11 @@ export default function SettingsScreen() {
             {lrIc('trash')}{lrTitle('清除缓存')}
             <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted }}>42.6 MB</Text>
           </ListRow>
+        </Card>
+
+        <Kicker style={{ paddingTop: 24, paddingHorizontal: 22, paddingBottom: 11 }}>应用</Kicker>
+        <Card>
+          <UpdateInfoRows onCheck={openCheck} />
         </Card>
 
         <View style={{ height: 24 }} />
