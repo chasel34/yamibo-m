@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
-  Block, ReadingBook, ReadingChapter, ReadingChapterIndex, ReadingChapterType,
+  Block, ReadingBook, ReadingChapterIndex, ReadingChapterType,
   ReadingConfidence, ReadingDiagnostics, ReadingIndex, ReadingProgress, ReadingStreamPage,
 } from './types';
 
@@ -472,26 +472,3 @@ export function stripLeadingChapterTitle(blocks: Block[], title: string): Block[
   });
 }
 
-export function buildReadingBook(first: ReadingStreamPage): ReadingBook {
-  const index = buildCompleteIndex([first], first.author.uid || '');
-  let chapters: ReadingChapter[] = index.chapters;
-  const pagePosts = new Map(first.posts.map((post) => [post.pid, post]));
-  chapters = chapters.map((chapter) => {
-    const post = pagePosts.get(chapter.pid);
-    return post ? { ...chapter, pos: post.pos, blocks: stripLeadingChapterTitle(post.blocks, chapter.title) } : chapter;
-  });
-  const count = chapters.length;
-  const shape = count <= 1 ? '短篇' : count >= 80 ? '长篇连载' : '中篇连载';
-  const complete = count === 1 || /(?:完结|完結|全文完|全\s*\d+\s*[话話]\s*完)/i.test(first.title);
-  return {
-    tid: first.tid,
-    fid: first.fid,
-    title: first.title,
-    author: first.author,
-    shape,
-    statusText: complete ? '完结' : '连载中',
-    chapters,
-    ppp: first.ppp,
-    totalPages: first.totalPages,
-  };
-}

@@ -86,14 +86,14 @@ export function AppUpdatesProvider({ children }: { children: React.ReactNode }) 
     backgroundAfterDownload.current = false;
     setPhase('downloading');
     try {
-      const result = await Updates.fetchUpdateAsync();
+      await Updates.fetchUpdateAsync();
       setStaged(true);
       if (backgroundAfterDownload.current) {
         setSheetOpen(false);
         setBannerOpen(true);
         setPhase('idle');
       } else {
-        setPhase(result.isNew || updates.isUpdatePending ? 'ready' : 'ready');
+        setPhase('ready');
       }
     } catch (e) {
       if (backgroundAfterDownload.current) toast('下载更新失败，请稍后再试');

@@ -2,7 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import CollectionsScreen from '../src/screens/Collections';
 import { getCollections } from '../src/api';
-import { AuthContext, ToastContext } from '../src/context';
+import { AuthContext, ToastProvider } from '../src/context';
 import { ThemeContext, light } from '../src/theme';
 import type { CollectionItem, ListResult } from '../src/types';
 
@@ -65,11 +65,11 @@ function collectionsResult(list: CollectionItem[], page = 1, totalPages = 1): Li
 function renderWithProviders(ui: React.ReactElement) {
   return render(
     <ThemeContext.Provider value={{ t: light, theme: 'light', setTheme: jest.fn(), uiFontLevel: 1, setUiFontLevel: jest.fn() }}>
-      <ToastContext.Provider value={{ msg: null, toast: jest.fn() }}>
+      <ToastProvider>
         <AuthContext.Provider value={{ booted: true, enter: jest.fn(), logout: jest.fn() }}>
           {ui}
         </AuthContext.Provider>
-      </ToastContext.Provider>
+      </ToastProvider>
     </ThemeContext.Provider>,
   );
 }

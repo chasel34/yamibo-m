@@ -53,10 +53,15 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const trackWidth = React.useRef(1);
   const autoUpdateChecked = React.useRef(false);
   const chapterIdxRef = React.useRef(0);
+  const pageIdxRef = React.useRef(0);
 
   React.useEffect(() => {
     chapterIdxRef.current = chapterIdx;
   }, [chapterIdx]);
+
+  React.useEffect(() => {
+    pageIdxRef.current = pageIdx;
+  }, [pageIdx]);
 
   const setBook = React.useCallback((next: ReadingBook) => {
     bookRef.current = next;
@@ -81,7 +86,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     const ready = current.chapters[index]?.blocks;
     if (ready) return ready;
     const target = current.chapters[index];
-    const estimated = Math.max(1, Math.min(current.totalPages, target.sourcePage || target.originalPage || (target.pos ? Math.ceil(target.pos / current.ppp) : Math.floor((index + 1) / current.ppp) + 1)));
+    const estimated = Math.max(1, Math.min(current.totalPages, target.sourcePage || (target.pos ? Math.ceil(target.pos / current.ppp) : Math.floor((index + 1) / current.ppp) + 1)));
     const order: number[] = [];
     for (let page = estimated; page <= current.totalPages; page += 1) order.push(page);
     for (let page = estimated - 1; page >= 1; page -= 1) order.push(page);
@@ -149,17 +154,20 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       const latest = readingIndexToBook(index, first.ppp || base.ppp);
       const currentPid = bookRef.current?.chapters[chapterIdxRef.current]?.pid;
       setBook(latest);
-      if (currentPid) {
-        const nextIdx = latest.chapters.findIndex((item) => item.pid === currentPid);
-        if (nextIdx >= 0) setChapterIdx(nextIdx);
-      }
+      const nextIdx = currentPid ? latest.chapters.findIndex((item) => item.pid === currentPid) : -1;
+      const targetIdx = Math.max(0, Math.min(nextIdx >= 0 ? nextIdx : chapterIdxRef.current, latest.chapters.length - 1));
+      if (targetIdx !== chapterIdxRef.current) setChapterIdx(targetIdx);
+      // readingIndexToBook returns chapters without `blocks`; the html memo blanks the
+      // reader until they exist. pagesRef is warm from the scan, so re-ensure the now-
+      // current chapter (a network-free remap) before the swap can show an empty page.
+      try { await ensureChapter(targetIdx); } catch (e) {}
       setUpdateHint('已补全楼主内容');
       setTimeout(() => setUpdateHint(null), 2800);
     } catch (e) {
       setUpdateHint('暂时无法检查更新，已使用本地整理结果');
       setTimeout(() => setUpdateHint(null), 3200);
     }
-  }, [authorid, scanAndSaveIndex, setBook, tid]);
+  }, [authorid, ensureChapter, scanAndSaveIndex, setBook, tid]);
 
   const openLoadedBook = React.useCallback(async (nextBook: ReadingBook, settings: Awaited<ReturnType<typeof getReaderSettings>>, progress: ReadingProgress | null, skipResume = false) => {
     if (!nextBook.chapters.length) throw new Error('没有识别到可阅读的正文');
@@ -256,9 +264,13 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     if (!chapter) return;
     setPanel('comments');
     if (comments != null || commentsLoading) return;
+    // Loading comments flips comments?.length, which the html memo depends on and so
+    // forces a WebView reload; re-seed the pager to the current page (not the chapter
+    // start) so tapping 本章评论 from the last page doesn't jump the reader to page 0.
+    setSourcePage(pageIdxRef.current);
     setCommentsLoading(true);
     try {
-      const pageHint = chapter.originalPage || (chapter.pos && book ? Math.ceil(chapter.pos / book.ppp) : undefined);
+      const pageHint = chapter.pos && book ? Math.ceil(chapter.pos / book.ppp) : undefined;
       setComments(await getChapterComments(tid, chapter.pid, authorid, pageHint));
     } catch (e) {
       nav.toast('评论加载失败');
@@ -272,13 +284,16 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     if (!chapter) return;
     nav.toast('正在打开原楼层…');
     try {
-      const page = chapter.originalPage || await resolvePostPage(tid, chapter.pid);
+      // Derive the unfiltered page from the known floor position (same as openComments)
+      // to skip a resolvePostPage round-trip; fall back to resolving when pos is absent
+      // (e.g. toc-ready linked chapters before the full scan populates pos).
+      const page = chapter.pos && book ? Math.ceil(chapter.pos / book.ppp) : await resolvePostPage(tid, chapter.pid);
       popToThread({ targetPid: chapter.pid, targetPage: page });
     } catch (e) {
       popToThread();
       nav.toast('无法定位楼层，已打开帖子');
     }
-  }, [chapter, nav, popToThread, tid]);
+  }, [book, chapter, nav, popToThread, tid]);
 
   const checkUpdates = React.useCallback(async (manual = true) => {
     if (!book) return;
@@ -293,10 +308,11 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
         const nextBook = readingIndexToBook(index, first.ppp);
         const currentPid = chapter?.pid;
         setBook(nextBook);
-        if (currentPid) {
-          const nextIdx = nextBook.chapters.findIndex((item) => item.pid === currentPid);
-          if (nextIdx >= 0) setChapterIdx(nextIdx);
-        }
+        const nextIdx = currentPid ? nextBook.chapters.findIndex((item) => item.pid === currentPid) : -1;
+        const targetIdx = Math.max(0, Math.min(nextIdx >= 0 ? nextIdx : chapterIdxRef.current, nextBook.chapters.length - 1));
+        if (targetIdx !== chapterIdxRef.current) setChapterIdx(targetIdx);
+        // Re-hydrate blocks for the now-current chapter (see completeScanInBackground).
+        try { await ensureChapter(targetIdx); } catch (e) {}
         setUpdateHint('发现新内容，已加入目录');
       } else if (manual) {
         setUpdateHint('已是最新整理结果');
@@ -306,7 +322,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     } finally {
       if (manual) setTimeout(() => setUpdateHint(null), 3200);
     }
-  }, [authorid, book, chapter?.pid, scanAndSaveIndex, setBook, tid]);
+  }, [authorid, book, chapter?.pid, ensureChapter, scanAndSaveIndex, setBook, tid]);
 
   React.useEffect(() => {
     if (phase !== 'reading' || !book || book.status === 'toc-ready' || autoUpdateChecked.current) return;

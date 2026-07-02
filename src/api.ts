@@ -359,6 +359,15 @@ export async function checkAuth(): Promise<string | null> {
   } catch (e) { return null; }
 }
 
+// Shared raw-sublist → BoardSub mapping (used by both the forum index board cards
+// and the board screen's sub-board chips — keep the shape in exactly one place).
+function mapSubs(sublist: any): BoardSub[] {
+  return asArray(sublist).map((rawSub: any) => {
+    const s = asRecord(rawSub);
+    return { fid: asString(s.fid), name: asString(s.name, '子版块'), today: asInt(s.todayposts), iconUrl: s.icon ? asString(s.icon) : null };
+  }).filter((s) => s.fid);
+}
+
 // ===================== Forum index =====================
 export async function getForumIndex(): Promise<ForumIndexData> {
   const v = variablesOf(await request('forumindex'));
@@ -377,10 +386,7 @@ export async function getForumIndex(): Promise<ForumIndexData> {
       threads: f.threads == null ? undefined : asString(f.threads),
       posts: f.posts == null ? undefined : asString(f.posts),
       iconUrl: f.icon ? asString(f.icon) : null,
-      subs: asArray(f.sublist).map((rawSub: any) => {
-        const s = asRecord(rawSub);
-        return { fid: asString(s.fid), name: asString(s.name, '子版块'), today: asInt(s.todayposts), iconUrl: s.icon ? asString(s.icon) : null };
-      }).filter((s) => s.fid),
+      subs: mapSubs(f.sublist),
     };
   };
   const groups: ForumGroup[] = asArray(v.catlist).map((rawCat: any) => {
@@ -413,10 +419,7 @@ export async function getBoard(fid: string, page = 1, typeid: string | number = 
 function mapBoardData(v: Record<string, any>, fid: string, page = 1): BoardData {
   const tt: Record<string, any> = asRecord(asRecord(v.threadtypes).types);
   const types: ThreadType[] = Object.keys(tt).map((id) => ({ id, name: asString(tt[id]) })).filter((it) => it.name);
-  const subs: BoardSub[] = asArray(v.sublist).map((rawSub: any) => {
-    const s = asRecord(rawSub);
-    return { fid: asString(s.fid), name: asString(s.name, '子版块'), today: asInt(s.todayposts), iconUrl: s.icon ? asString(s.icon) : null };
-  }).filter((s) => s.fid);
+  const subs: BoardSub[] = mapSubs(v.sublist);
   // 置顶/公告（displayorder>0）单独抽出做 PinnedRow；type 名为「公告」→ notice，其余 → sticky。
   // 它们只在第 1 页（无筛选）出现，所以 hasMore 仍按 raw 总数判断，而非过滤后的列表。
   const raw: any[] = asArray(v.forum_threadlist).map(asRecord);
@@ -685,13 +688,17 @@ export async function getThreadFavorite(tid: string, opts: { fullScan?: boolean 
   let page = 1;
   while (true) {
     const v = variablesOf(await request('myfavthread', { page }));
+    // End-of-list is signalled by the RAW page being empty, not by the tid-filtered
+    // list: a page holding only non-thread favorites (idtype uid/blogid…) filters to
+    // an empty thread list while more favorite pages (including threads) still follow.
+    const rawLen = asArray(v.list).length;
     const result = mapCollections(v, page);
     rememberFavoritePage(result);
     const found = result.list.find((it) => it.tid === tid);
     if (found) return rememberFavoriteState(tid, { favorited: true, favid: found.favid });
     const totalPages = result.totalPages || page;
     const scanLimit = favoriteScanLimit(totalPages, opts.fullScan);
-    if (page >= scanLimit || result.list.length === 0) break;
+    if (page >= scanLimit || rawLen === 0) break;
     page += 1;
   }
   return rememberFavoriteState(tid, { favorited: false });
@@ -766,7 +773,13 @@ export async function getSelfProfile(): Promise<{ user: UserProfile }> {
     getProfile(),
     getCollections(1).catch(() => null),
   ]);
-  return { user: fav ? { ...user, stats: { ...user.stats, collections: fav.count } } : user };
+  if (!fav) return { user };
+  // myfavthread.count is the mixed total across all favorite idtypes, but the 收藏
+  // list only renders threads (idtype=tid). When everything fits on one page the
+  // filtered list length IS the exact thread count; multi-page falls back to the
+  // mixed total (best available without extra round-trips) — never an undercount.
+  const collections = fav.totalPages <= 1 ? fav.list.length : fav.count;
+  return { user: { ...user, stats: { ...user.stats, collections } } };
 }
 
 // ===================== Reminders (mynotelist) =====================
