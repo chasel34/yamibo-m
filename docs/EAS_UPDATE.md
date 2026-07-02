@@ -6,7 +6,7 @@
 
 - EAS project update URL: `https://u.expo.dev/eb17ed95-0774-4a83-86ba-956550810f0b`
 - Runtime version policy: `appVersion`
-- 当前 app version / runtimeVersion: `0.1.3`
+- 当前 app version / runtimeVersion: `0.1.4`
 - 自动检查策略: `checkAutomatically: "ON_LOAD"`
 - 启动回退策略: `fallbackToCacheTimeout: 0`
 
