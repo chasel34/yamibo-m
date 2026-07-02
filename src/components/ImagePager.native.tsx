@@ -28,7 +28,7 @@ function ImagePager(
       {images.map((item, k) => (
         // key={src} + collapsable={false}：ViewPager2 子项须为真实 View，配合 expo-image
         // 的 recyclingKey 防止回收串图。
-        <View key={String(item.src ?? k)} collapsable={false} style={{ flex: 1 }}>
+        <View key={`${k}:${item.src ?? ''}`} collapsable={false} style={{ flex: 1 }}>
           {renderPage(item, k)}
         </View>
       ))}

@@ -28,7 +28,7 @@ function ImagePager(
           showsHorizontalScrollIndicator={false}
           initialScrollIndex={initialIndex}
           getItemLayout={(_, index) => ({ length: w, offset: w * index, index })}
-          keyExtractor={(item, k) => String(item.src ?? k)}
+          keyExtractor={(item, k) => `${k}:${item.src ?? ''}`}
           renderItem={({ item, index }) => (
             <View style={{ width: w, height: '100%' }}>{renderPage(item, index)}</View>
           )}

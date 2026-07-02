@@ -16,6 +16,11 @@ import { clamp } from '../util';
 // 固定纸白 chrome（贴合阅读模式默认外观，不跟随/切换主题），与 Reader.tsx 的 chrome 同源。
 const T = READER_THEMES.paper;
 const ANIM = { duration: 300, useNativeDriver: true } as const;
+// Only pages within ±WINDOW of the current one mount a real image; the native pager
+// still instantiates every child, so this caps concurrent high-priority decodes on
+// open. WINDOW ⊇ the pager's pre-mounted ±1 and prefetchAround's ±2, so a normal swipe
+// always lands on an already-loaded page (no flash-of-placeholder on a single turn).
+const WINDOW = 2;
 
 // —— 底部进度滑块（复刻 reader 的 slider，按页定位） ——
 function PageSlider({ i, n, onJump }: { i: number; n: number; onJump: (k: number) => void }) {
@@ -96,6 +101,10 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
   const onIndex = React.useCallback((pos: number) => {
     targetRef.current = pos;
     setI(pos);
+    // A freshly-settled page is always at scale 1, so clear any zoom flag left stuck
+    // by paging via the on-screen prev/next/slider chrome while a page was zoomed
+    // (that path doesn't run the leaving page's resetZoom report).
+    setZoomed(false);
     prefetchAround(pos);
   }, [prefetchAround]);
   // 点击/按钮翻页：带动画的 setPage（去重避免重复命令）。
@@ -121,18 +130,23 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
     setVp({ W: width, H: height });
   };
 
-  const renderPage = React.useCallback((item: ImagePagerItem, k: number) => (
-    <ZoomableImage
-      item={item}
-      active={k === i}
-      W={W}
-      H={H}
-      onZoomChange={setZoomed}
-      onToggleChrome={toggleChrome}
-      onEdgeTap={onEdgeTap}
-      onDismiss={onDismiss}
-    />
-  ), [i, W, H, toggleChrome, onEdgeTap, onDismiss]);
+  const renderPage = React.useCallback((item: ImagePagerItem, k: number) => {
+    // Distant pages render an empty spacer instead of a loading ZoomableImage, so a
+    // large gallery doesn't fire N high-priority image decodes the moment it opens.
+    if (Math.abs(k - i) > WINDOW) return <View style={{ width: W, height: H }} />;
+    return (
+      <ZoomableImage
+        item={item}
+        active={k === i}
+        W={W}
+        H={H}
+        onZoomChange={setZoomed}
+        onToggleChrome={toggleChrome}
+        onEdgeTap={onEdgeTap}
+        onDismiss={onDismiss}
+      />
+    );
+  }, [i, W, H, toggleChrome, onEdgeTap, onDismiss]);
 
   const topTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] });
   const botTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] });
@@ -201,7 +215,7 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
                 {images.map((item, k) => {
                   const cur = k === i;
                   return (
-                    <View key={String(item.src ?? k)} style={{ width: '33.333%', paddingHorizontal: 6, marginBottom: 12 }}>
+                    <View key={`${k}:${item.src ?? ''}`} style={{ width: '33.333%', paddingHorizontal: 6, marginBottom: 12 }}>
                       <Pressable onPress={() => { jump(k); setPanel(null); }}>
                         <View style={{ aspectRatio: 0.7, borderRadius: 9, overflow: 'hidden', borderWidth: cur ? 2.5 : 1, borderColor: cur ? T.accent : T.line }}>
                           <ViewerImage item={item} />
