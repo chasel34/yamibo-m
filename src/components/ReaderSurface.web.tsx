@@ -22,7 +22,12 @@ export default function ReaderSurface({ html, backgroundColor, onMessage }: Read
     ref,
     srcDoc: html,
     title: '阅读正文',
-    sandbox: 'allow-scripts allow-same-origin',
+    // Drop allow-same-origin: an allow-scripts+allow-same-origin srcDoc iframe inherits
+    // the app's origin and could reach parent DOM/storage if any forum-controlled field
+    // ever slipped past esc(). The reader script only needs postMessage(…, '*') (which
+    // works from an opaque origin) and the parent authenticates by event.source, so
+    // isolating the frame to an opaque origin is functionally inert but safer.
+    sandbox: 'allow-scripts',
     style: {
       display: 'block',
       width: '100%',

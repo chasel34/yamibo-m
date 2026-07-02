@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import './src/uiFontScale'; // installs the global Text fontSize-scaling patch (must run before any render)
 import { setUiFontScale, uiFontScaleForLevel, UI_FONT_LEVEL_KEY } from './src/uiFontScale';
 import { ThemeContext, THEMES, useTheme } from './src/theme';
-import { ToastProvider, useToast, AuthContext } from './src/context';
+import { ToastProvider, useToastMessage, AuthContext } from './src/context';
 import { checkAuth, logout as apiLogout } from './src/api';
 import { AppUpdatesProvider } from './src/appUpdates';
 import { Toast } from './src/components/ui';
@@ -98,7 +98,7 @@ function HomeIndicator() {
 }
 
 function ToastLayer() {
-  const { msg } = useToast();
+  const msg = useToastMessage();
   return <Toast msg={msg} />;
 }
 
