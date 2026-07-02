@@ -162,7 +162,6 @@ export interface ReadingChapter {
   confidence?: ReadingConfidence;
   sourcePage?: number;
   pageOffset?: number;
-  originalPage?: number;
   pos?: number; // unfiltered floor position of the chapter's楼主楼层（用于定位章末评论页）
   blocks?: Block[];
 }
@@ -179,7 +178,6 @@ export interface ReadingChapterIndex {
   pos?: number;
   sourcePage?: number;
   pageOffset?: number;
-  originalPage?: number;
 }
 export interface ReadingDiagnostics {
   opPostCount: number;
