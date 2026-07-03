@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -13,9 +14,10 @@ import Icon from './components/Icon';
 import { HLine } from './components/ui';
 import { useToast } from './context';
 import { FONTS, useTheme } from './theme';
-import { APP_DISPLAY_VERSION } from './appInfo';
+import { APP_DISPLAY_VERSION, APP_VERSION } from './appInfo';
+import { checkGithubApkUpdate, GithubApkUpdate } from './githubApkUpdates';
 
-type SheetPhase = 'idle' | 'checking' | 'none' | 'ota-found' | 'downloading' | 'ready' | 'error' | 'unsupported';
+type SheetPhase = 'idle' | 'checking' | 'none' | 'ota-found' | 'apk-found' | 'downloading' | 'ready' | 'error' | 'unsupported';
 
 interface AppUpdatesContextValue {
   staged: boolean;
@@ -42,6 +44,7 @@ export function AppUpdatesProvider({ children }: { children: React.ReactNode }) 
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [phase, setPhase] = React.useState<SheetPhase>('idle');
   const [staged, setStaged] = React.useState(false);
+  const [apkUpdate, setApkUpdate] = React.useState<GithubApkUpdate | null>(null);
   const [bannerOpen, setBannerOpen] = React.useState(false);
   const [restarting, setRestarting] = React.useState(false);
   const backgroundAfterDownload = React.useRef(false);
@@ -62,19 +65,29 @@ export function AppUpdatesProvider({ children }: { children: React.ReactNode }) 
   const openCheck = React.useCallback(async () => {
     setBannerOpen(false);
     setSheetOpen(true);
+    setApkUpdate(null);
     if (staged || updates.isUpdatePending) {
       setStaged(true);
       setPhase('ready');
       return;
     }
-    if (!supported) {
-      setPhase('unsupported');
-      return;
-    }
     setPhase('checking');
     try {
-      const result = await Updates.checkForUpdateAsync();
-      setPhase(result.isAvailable ? 'ota-found' : 'none');
+      if (supported) {
+        const result = await Updates.checkForUpdateAsync();
+        if (result.isAvailable) {
+          setPhase('ota-found');
+          return;
+        }
+      }
+
+      const githubUpdate = await checkGithubApkUpdate(APP_VERSION);
+      if (githubUpdate) {
+        setApkUpdate(githubUpdate);
+        setPhase('apk-found');
+      } else {
+        setPhase(supported ? 'none' : 'unsupported');
+      }
     } catch (e) {
       setPhase('error');
     }
@@ -123,6 +136,24 @@ export function AppUpdatesProvider({ children }: { children: React.ReactNode }) 
     }
   }, [toast]);
 
+  const openApkDownload = React.useCallback(async () => {
+    if (!apkUpdate) return;
+    try {
+      await Linking.openURL(apkUpdate.apkUrl);
+      setSheetOpen(false);
+      setPhase('idle');
+    } catch (e) {
+      try {
+        await Linking.openURL(apkUpdate.releaseUrl);
+        setSheetOpen(false);
+        setPhase('idle');
+        toast('已打开发布页，请在 Assets 中下载 APK');
+      } catch (err) {
+        toast('无法打开下载链接，请稍后再试');
+      }
+    }
+  }, [apkUpdate, toast]);
+
   const retry = React.useCallback(() => {
     openCheck();
   }, [openCheck]);
@@ -139,9 +170,11 @@ export function AppUpdatesProvider({ children }: { children: React.ReactNode }) 
       <UpdateSheet
         open={sheetOpen}
         phase={phase}
+        apkUpdate={apkUpdate}
         progress={updates.downloadProgress || 0}
         onClose={closeSheet}
         onDownload={startDownload}
+        onOpenApkDownload={openApkDownload}
         onBackground={downloadInBackground}
         onRestart={restartNow}
         onRetry={retry}
@@ -164,12 +197,14 @@ export function UpdateStatusChip() {
   );
 }
 
-function UpdateSheet({ open, phase, progress, onClose, onDownload, onBackground, onRestart, onRetry }: {
+function UpdateSheet({ open, phase, apkUpdate, progress, onClose, onDownload, onOpenApkDownload, onBackground, onRestart, onRetry }: {
   open: boolean;
   phase: SheetPhase;
+  apkUpdate: GithubApkUpdate | null;
   progress: number;
   onClose: () => void;
   onDownload: () => void;
+  onOpenApkDownload: () => void;
   onBackground: () => void;
   onRestart: () => void;
   onRetry: () => void;
@@ -194,9 +229,11 @@ function UpdateSheet({ open, phase, progress, onClose, onDownload, onBackground,
           <View style={{ width: 38, height: 5, borderRadius: 3, backgroundColor: t.lineStrong, alignSelf: 'center', marginBottom: 6 }} />
           <SheetContent
             phase={phase}
+            apkUpdate={apkUpdate}
             progress={progress}
             onClose={onClose}
             onDownload={onDownload}
+            onOpenApkDownload={onOpenApkDownload}
             onBackground={onBackground}
             onRestart={onRestart}
             onRetry={onRetry}
@@ -207,11 +244,13 @@ function UpdateSheet({ open, phase, progress, onClose, onDownload, onBackground,
   );
 }
 
-function SheetContent({ phase, progress, onClose, onDownload, onBackground, onRestart, onRetry }: {
+function SheetContent({ phase, apkUpdate, progress, onClose, onDownload, onOpenApkDownload, onBackground, onRestart, onRetry }: {
   phase: SheetPhase;
+  apkUpdate: GithubApkUpdate | null;
   progress: number;
   onClose: () => void;
   onDownload: () => void;
+  onOpenApkDownload: () => void;
   onBackground: () => void;
   onRestart: () => void;
   onRetry: () => void;
@@ -234,6 +273,19 @@ function SheetContent({ phase, progress, onClose, onDownload, onBackground, onRe
           onSecondary={onClose}
         />
       );
+    case 'apk-found':
+      return apkUpdate ? (
+        <MessageState
+          icon="external"
+          title="发现安装包更新"
+          body={`百合会 ${apkUpdate.displayVersion} 已发布。将打开浏览器下载 APK，下载完成后点开文件并按系统提示安装。`}
+          primary="下载 APK"
+          primaryIcon="download"
+          onPrimary={onOpenApkDownload}
+          secondary="稍后"
+          onSecondary={onClose}
+        />
+      ) : null;
     case 'downloading':
       return <DownloadingState progress={progress} onBackground={onBackground} />;
     case 'ready':
@@ -250,7 +302,7 @@ function SheetContent({ phase, progress, onClose, onDownload, onBackground, onRe
         />
       );
     case 'unsupported':
-      return <MessageState icon="info" title="暂不支持在线更新" body="当前版本（开发版本或未配置更新通道）暂不支持在线更新，可前往发布页获取最新版本。" primary="知道了" onPrimary={onClose} soft />;
+      return <MessageState icon="check" title="已是最新版本" body={`你正在使用最新版本 百合会 ${APP_DISPLAY_VERSION}。当前环境不支持 EAS 热更新，但没有发现新的安装包。`} primary="知道了" onPrimary={onClose} soft />;
     case 'error':
       return <MessageState icon="wave" title="检查更新失败" body="网络好像不太稳定，没能完成检查。歇一会儿再试也不迟。" primary="重试" primaryIcon="refresh" onPrimary={onRetry} secondary="稍后" onSecondary={onClose} soft />;
     default:

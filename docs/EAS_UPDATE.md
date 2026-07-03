@@ -6,7 +6,7 @@
 
 - EAS project update URL: `https://u.expo.dev/eb17ed95-0774-4a83-86ba-956550810f0b`
 - Runtime version policy: `appVersion`
-- 当前 app version / runtimeVersion: `0.1.4`
+- 当前 app version / runtimeVersion: `0.1.5`
 - 自动检查策略: `checkAutomatically: "ON_LOAD"`
 - 启动回退策略: `fallbackToCacheTimeout: 0`
 
@@ -29,6 +29,20 @@ App 会在构建时把 channel 写进原生包。也就是说：
 - 同一个 runtimeVersion，本项目目前由 `app.json` 的 `expo.version` 决定
 
 OTA 只适合 JS 与资源文件更新。只要改到了原生能力、原生依赖、Expo 配置中会影响 native project 的字段，或升级了需要 native rebuild 的包，就必须重新打安装包。
+
+本项目同时支持 GitHub Release APK 大版本更新检查。App 内“检查更新”的顺序是：
+
+1. 先检查 EAS OTA。若同 channel / runtimeVersion 下有可用 OTA，继续走“下载更新 / 重启生效”流程。
+2. 若没有 OTA，再检查 GitHub 最新 Release 的 Android APK。
+3. 只有 OTA 和 GitHub APK 都没有新版时，才显示“已是最新版本”。
+
+APK 大版本更新会打开浏览器下载 GitHub Release asset，不在 App 内下载 APK、不申请 Android 安装权限、也不做静默安装。用户下载完成后，需要点开 APK 并按 Android 系统提示确认安装。
+
+当前 APK asset URL 约定：
+
+```text
+https://github.com/chasel34/yamibo-m/releases/download/vX.Y.Z/yamibo-m-vX.Y.Z.apk
+```
 
 ## 初始化记录
 
@@ -111,6 +125,8 @@ npx --yes eas-cli@latest build:list --platform android
 
 如果希望刚安装后立即显示“已是最新版本”，需要先初始化对应 channel，再重新打一个安装包。
 
+如果 GitHub Release 上已有更高版本 APK，而当前安装包 runtimeVersion 又没有可用 OTA，检查更新应提示“发现安装包更新”。点击“下载 APK”后，应打开浏览器并访问对应 release asset 下载链接。
+
 ### 验证 OTA
 
 1. 在不改原生依赖和 native 配置的前提下，改一处可见 JS 文案或界面。
@@ -136,10 +152,14 @@ npx --yes eas-cli@latest build:list --platform android
 常见原因：
 
 - 网络或 EAS Update 服务请求失败。
+- 网络或 GitHub Releases API 请求失败。
 - 当前 channel 没有初始化，或没有关联到分支。
 - 发布的 OTA 与当前包的 platform / channel / runtimeVersion 不匹配。
+- 最新 GitHub Release 没有上传 `.apk` asset，或 asset 链接不可访问。
 
 排查时先用 `channel:list` 确认 channel 绑定，再检查发布 OTA 时使用的 `--channel` 和安装包 profile 是否一致。
+
+如果 EAS 侧无异常，再确认最新 release 形如 `v0.1.4`，并包含 `yamibo-m-v0.1.4.apk` 这样的 APK asset。
 
 ### Doctor schema 报 `newArchEnabled`
 
