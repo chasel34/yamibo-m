@@ -1,6 +1,6 @@
 import React from 'react';
 import { Platform, StatusBar as NativeStatusBar, View, Text, Pressable, TextInput, StyleProp, ViewStyle, ImageStyle } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import CachedImage from './CachedImage';
 import Svg, { Rect, Defs, Pattern } from 'react-native-svg';
 import Icon from './Icon';
@@ -27,12 +27,12 @@ function isLightColor(color: string): boolean {
 // system icon contrast. Web keeps the design-frame spacing.
 export function StatusBar({ color }: { time?: string; color?: string }) {
   const { t } = useTheme();
-  const insets = useSafeAreaInsets();
+  const insets = React.useContext(SafeAreaInsetsContext);
   React.useEffect(() => {
     if (Platform.OS === 'web') return;
     NativeStatusBar.setBarStyle(isLightColor(color || t.statusbar) ? 'light-content' : 'dark-content', true);
   }, [color, t.statusbar]);
-  return <View style={{ height: Platform.OS === 'web' ? 48 : insets.top }} />;
+  return <View style={{ height: Platform.OS === 'web' ? 48 : insets?.top || 0 }} />;
 }
 
 // ===================== Toggle (ported from .toggle) =====================
