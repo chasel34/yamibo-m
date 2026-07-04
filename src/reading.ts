@@ -21,6 +21,7 @@ const INDEX_PREFIX = 'yh_rd_index_';
 const THEME_KEY = 'yh_rd_theme';
 const FONT_KEY = 'yh_rd_font';
 const HINT_KEY = 'yh_rd_hint';
+const LOW_CONFIDENCE_HINT_KEY = 'yh_rd_low_confidence_hint';
 const VIEWER_HINT_KEY = 'yh_viewer_hint';
 
 function indexKey(tid: string, authorid: string): string {
@@ -58,10 +59,10 @@ export async function clearReadingIndex(tid: string, authorid: string): Promise<
   try { await AsyncStorage.removeItem(indexKey(tid, authorid)); } catch (e) {}
 }
 
-export async function getReaderSettings(): Promise<{ theme: ReaderThemeKey; fontIdx: number; hinted: boolean }> {
+export async function getReaderSettings(): Promise<{ theme: ReaderThemeKey; fontIdx: number; hinted: boolean; lowConfidenceHinted: boolean }> {
   try {
-    const [theme, font, hinted] = await Promise.all([
-      AsyncStorage.getItem(THEME_KEY), AsyncStorage.getItem(FONT_KEY), AsyncStorage.getItem(HINT_KEY),
+    const [theme, font, hinted, lowConfidenceHinted] = await Promise.all([
+      AsyncStorage.getItem(THEME_KEY), AsyncStorage.getItem(FONT_KEY), AsyncStorage.getItem(HINT_KEY), AsyncStorage.getItem(LOW_CONFIDENCE_HINT_KEY),
     ]);
     const parsed = parseInt(font ?? '', 10);
     const fontIdx = Number.isFinite(parsed) ? Math.max(0, Math.min(READER_FONTS.length - 1, parsed)) : 1;
@@ -69,9 +70,10 @@ export async function getReaderSettings(): Promise<{ theme: ReaderThemeKey; font
       theme: theme && theme in READER_THEMES ? theme as ReaderThemeKey : 'paper',
       fontIdx,
       hinted: hinted === '1',
+      lowConfidenceHinted: lowConfidenceHinted === '1',
     };
   } catch (e) {
-    return { theme: 'paper', fontIdx: 1, hinted: false };
+    return { theme: 'paper', fontIdx: 1, hinted: false, lowConfidenceHinted: false };
   }
 }
 
@@ -85,6 +87,10 @@ export function saveReaderFont(fontIdx: number) {
 
 export function markReaderHinted() {
   AsyncStorage.setItem(HINT_KEY, '1').catch(() => {});
+}
+
+export function markReaderLowConfidenceHinted() {
+  AsyncStorage.setItem(LOW_CONFIDENCE_HINT_KEY, '1').catch(() => {});
 }
 
 export async function getViewerHinted(): Promise<boolean> {
@@ -471,4 +477,3 @@ export function stripLeadingChapterTitle(blocks: Block[], title: string): Block[
     return [{ t: 'rich', runs: [{ v }] }];
   });
 }
-

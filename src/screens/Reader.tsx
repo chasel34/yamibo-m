@@ -13,7 +13,7 @@ import { parseForumLink } from '../forumLinks';
 import {
   buildCompleteIndex, buildTocReadyIndex, clearReadingIndex, getReaderSettings,
   getReadingIndex, getReadingProgress, hasReliableLinkedToc, isWeakChapter, LITERATURE_FIDS,
-  markReaderHinted, READER_FONTS, READER_THEMES, saveReaderFont,
+  markReaderHinted, markReaderLowConfidenceHinted, READER_FONTS, READER_THEMES, saveReaderFont,
   saveReaderTheme, saveReadingIndex, saveReadingProgress, readingIndexToBook,
   stripLeadingChapterTitle, type ReaderThemeKey,
 } from '../reading';
@@ -49,7 +49,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const [sliderPreview, setSliderPreview] = React.useState<number | null>(null);
   const [organize, setOrganize] = React.useState({ read: 0, total: 0 });
   const [updateHint, setUpdateHint] = React.useState<string | null>(null);
-  const [lowHint, setLowHint] = React.useState(true);
+  const [lowHint, setLowHint] = React.useState(false);
   const trackWidth = React.useRef(1);
   const autoUpdateChecked = React.useRef(false);
   const chapterIdxRef = React.useRef(0);
@@ -175,6 +175,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     setThemeKey(settings.theme);
     setFontIdx(settings.fontIdx);
     setHint(!settings.hinted);
+    setLowHint(nextBook.diagnostics?.confidence === 'low' && !settings.lowConfidenceHinted);
     setSaved(progress);
     const initial = !fresh && progress ? initialFromProgress(nextBook, progress) : 0;
     setChapterIdx(initial);
@@ -232,6 +233,17 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     const timer = setTimeout(() => { setHint(false); markReaderHinted(); }, 3200);
     return () => clearTimeout(timer);
   }, [hint, phase]);
+
+  const dismissLowHint = React.useCallback(() => {
+    setLowHint(false);
+    markReaderLowConfidenceHinted();
+  }, []);
+
+  React.useEffect(() => {
+    if (book?.diagnostics?.confidence !== 'low' || !lowHint || chrome || phase !== 'reading' || hint) return;
+    const timer = setTimeout(dismissLowHint, 3000);
+    return () => clearTimeout(timer);
+  }, [book?.diagnostics?.confidence, chrome, dismissLowHint, hint, lowHint, phase]);
 
   const chapter = book?.chapters[chapterIdx];
   const pct = book ? Math.max(1, Math.min(100, Math.round(((chapterIdx + (pageIdx + 1) / Math.max(1, pageCount)) / book.chapters.length) * 100))) : 1;
@@ -513,7 +525,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
             <Text style={{ color: T.ink, fontFamily: FONTS.head, fontSize: 13, fontWeight: '700' }}>已按楼主楼层保留内容</Text>
             <Text style={{ color: T.soft, fontFamily: FONTS.head, fontSize: 12, lineHeight: 18, marginTop: 3 }}>章节名可能不完整，部分内容可能是楼主说明，可对照原楼层查看。</Text>
           </View>
-          <Pressable onPress={() => setLowHint(false)} style={{ padding: 4 }}><Icon name="close" size={15} color={T.soft} /></Pressable>
+          <Pressable onPress={dismissLowHint} style={{ padding: 4 }}><Icon name="close" size={15} color={T.soft} /></Pressable>
         </View>
       )}
       {chrome && (
