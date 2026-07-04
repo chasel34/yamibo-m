@@ -1,6 +1,5 @@
 import React from 'react';
-import { View, Platform } from 'react-native';
-import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
+import { View, Platform, StatusBar as NativeStatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -87,16 +86,6 @@ function RootNavigator() {
   );
 }
 
-// Home indicator (.home-indicator)
-function HomeIndicator() {
-  const { t } = useTheme();
-  return (
-    <View pointerEvents="none" style={{ position: 'absolute', bottom: 8, left: 0, right: 0, alignItems: 'center', zIndex: 50 }}>
-      <View style={{ width: 134, height: 5, borderRadius: 3, backgroundColor: t.ink, opacity: 0.22 }} />
-    </View>
-  );
-}
-
 function ToastLayer() {
   const msg = useToastMessage();
   return <Toast msg={msg} />;
@@ -125,8 +114,12 @@ function Shell() {
         <RootNavigator />
       </AppUpdatesProvider>
       <ToastLayer />
-      <HomeIndicator />
-      <ExpoStatusBar style={t.name === 'dark' ? 'light' : 'dark'} hidden />
+      <NativeStatusBar
+        hidden={false}
+        barStyle={t.name === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor="transparent"
+        translucent
+      />
     </PhoneFrame>
   );
 }

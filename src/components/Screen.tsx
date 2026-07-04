@@ -10,8 +10,8 @@ interface ScreenProps {
   style?: StyleProp<ViewStyle>;
 }
 
-// Column wrapper that paints the theme background and renders the faux status bar
-// at the top, mirroring how every screen in the design starts with <StatusBar/>.
+// Column wrapper that paints the theme background and reserves top safe-area
+// space for the real system status bar.
 export default function Screen({ children, withStatus = true, statusColor, style }: ScreenProps) {
   const { t } = useTheme();
   return (

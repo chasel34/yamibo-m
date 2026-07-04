@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, Pressable, TextInput, StyleProp, ViewStyle, ImageStyle } from 'react-native';
+import { Platform, StatusBar as NativeStatusBar, View, Text, Pressable, TextInput, StyleProp, ViewStyle, ImageStyle } from 'react-native';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import CachedImage from './CachedImage';
-import Svg, { Rect, Path, Circle, Defs, Pattern } from 'react-native-svg';
+import Svg, { Rect, Defs, Pattern } from 'react-native-svg';
 import Icon from './Icon';
 import { useTheme, FONTS, Theme } from '../theme';
 import { avatarUrl } from '../util';
@@ -12,48 +13,26 @@ interface AvatarUser {
   name?: string;
 }
 
-// ===================== Status bar (faux, ported from .statusbar) =====================
-function nowHM(): string {
-  const d = new Date();
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+function isLightColor(color: string): boolean {
+  const hex = color.replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return false;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160;
 }
-export function StatusBar({ time, color }: { time?: string; color?: string }) {
+
+// System status bar spacer. Native renders the real OS status bar; this keeps
+// app chrome/content out of its safe area and maps the requested color to
+// system icon contrast. Web keeps the design-frame spacing.
+export function StatusBar({ color }: { time?: string; color?: string }) {
   const { t } = useTheme();
-  const c = color || t.statusbar;
-  // Real wall-clock time, ticking each minute (was hardcoded to 9:08).
-  const [clock, setClock] = React.useState(nowHM);
+  const insets = React.useContext(SafeAreaInsetsContext);
   React.useEffect(() => {
-    if (time != null) return;
-    const id = setInterval(() => setClock(nowHM()), 30000);
-    return () => clearInterval(id);
-  }, [time]);
-  const shown = time != null ? time : clock;
-  return (
-    <View style={{ height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 30, paddingRight: 26 }}>
-      <Text style={{ fontSize: 15, fontWeight: '600', color: c, fontFamily: FONTS.head, fontVariant: ['tabular-nums'] }}>{shown}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        {/* signal */}
-        <Svg width={18} height={12} viewBox="0 0 18 12">
-          <Rect x="0" y="8" width="3" height="4" rx="1" fill={c} />
-          <Rect x="5" y="5.5" width="3" height="6.5" rx="1" fill={c} />
-          <Rect x="10" y="3" width="3" height="9" rx="1" fill={c} opacity={0.35} />
-          <Rect x="15" y="0.5" width="3" height="11.5" rx="1" fill={c} opacity={0.35} />
-        </Svg>
-        {/* wifi */}
-        <Svg width={17} height={12} viewBox="0 0 17 12">
-          <Path d="M8.5 2.5c2.4 0 4.6.9 6.2 2.4l1.2-1.3A11 11 0 0 0 8.5.5 11 11 0 0 0 1.1 3.6l1.2 1.3A9 9 0 0 1 8.5 2.5z" fill={c} />
-          <Path d="M8.5 6c1.3 0 2.5.5 3.4 1.4l1.2-1.3A7 7 0 0 0 8.5 4 7 7 0 0 0 3.9 6.1l1.2 1.3A5 5 0 0 1 8.5 6z" fill={c} />
-          <Circle cx="8.5" cy="10" r="1.6" fill={c} />
-        </Svg>
-        {/* battery */}
-        <Svg width={26} height={13} viewBox="0 0 26 13">
-          <Rect x="0.5" y="0.5" width="21" height="12" rx="3.2" stroke={c} opacity={0.4} fill="none" />
-          <Rect x="2" y="2" width="16" height="9" rx="1.8" fill={c} />
-          <Rect x="23" y="4" width="1.6" height="5" rx="0.8" fill={c} opacity={0.4} />
-        </Svg>
-      </View>
-    </View>
-  );
+    if (Platform.OS === 'web') return;
+    NativeStatusBar.setBarStyle(isLightColor(color || t.statusbar) ? 'light-content' : 'dark-content', true);
+  }, [color, t.statusbar]);
+  return <View style={{ height: Platform.OS === 'web' ? 48 : insets?.top || 0 }} />;
 }
 
 // ===================== Toggle (ported from .toggle) =====================
