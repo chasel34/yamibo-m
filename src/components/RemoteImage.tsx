@@ -14,16 +14,26 @@ interface RemoteImageProps {
   height?: number;
 }
 
+const FALLBACK_IMAGE_RATIO = 1.5;
+const RATIO_EPSILON = 0.005;
+
+function imageRatio(width?: number, height?: number): number | null {
+  if (!width || !height) return null;
+  const ratio = width / height;
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : null;
+}
+
 // Post-body image: loads the real attachment, keeps aspect ratio, falls back to
 // the striped placeholder if it can't load.
 export default function RemoteImage({ src, cap, onPress, style, width, height }: RemoteImageProps) {
   const { t } = useTheme();
-  const [ratio, setRatio] = React.useState(width && height ? width / height : 1.5);
+  const fixedRatio = imageRatio(width, height);
+  const [ratio, setRatio] = React.useState(fixedRatio ?? FALLBACK_IMAGE_RATIO);
   const [err, setErr] = React.useState(false);
   React.useEffect(() => {
     setErr(false);
-    setRatio(width && height ? width / height : 1.5);
-  }, [src, width, height]);
+    setRatio(fixedRatio ?? FALLBACK_IMAGE_RATIO);
+  }, [fixedRatio, src]);
 
   if (!src || err) {
     return (
@@ -39,8 +49,12 @@ export default function RemoteImage({ src, cap, onPress, style, width, height }:
     );
   }
   const onLoad = (e: any) => {
-    const s = e?.nativeEvent?.source || e?.source || {};
-    if (s.width && s.height) setRatio(s.width / s.height);
+    const s = e?.source || e?.nativeEvent?.source || {};
+    const next = imageRatio(Number(s.width), Number(s.height));
+    if (fixedRatio != null) return;
+    if (next != null) {
+      setRatio((current) => Math.abs(current - next) < RATIO_EPSILON ? current : next);
+    }
   };
   return (
     <Pressable onPress={onPress}>

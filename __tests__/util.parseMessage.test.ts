@@ -44,9 +44,26 @@ describe('parseMessage rich text fixtures', () => {
   });
 
   test('linked images render as images', () => {
-    const blocks = parseMessage('<a href="forum.php?mod=attachment&aid=1"><img src="static/image/common/none.gif" file="data/attachment/forum/202606/20/demo.png" /></a>');
+    const blocks = parseMessage('<a href="forum.php?mod=attachment&aid=1"><img src="static/image/common/none.gif" file="data/attachment/forum/202606/20/demo.png" width="420" height="1064" /></a>');
     expect(count(blocks, 'img')).toBe(1);
     expect(count(blocks, 'link')).toBe(0);
+    const image = blocks.find((block) => block.t === 'img');
+    expect(image).toMatchObject({ t: 'img', width: 420, height: 1064 });
+  });
+
+  test('inline images inherit attachment dimensions', () => {
+    const blocks = parseMessage('<img src="static/image/common/none.gif" file="data/attachment/forum/202606/20/demo.jpg" />', {
+      1: {
+        attachment: '202606/20/demo.jpg',
+        filename: 'demo.jpg',
+        isimage: '1',
+        width: '1176',
+        height: '2400',
+      },
+    }, ['1']);
+    expect(count(blocks, 'img')).toBe(1);
+    const image = blocks.find((block) => block.t === 'img');
+    expect(image).toMatchObject({ t: 'img', width: 1176, height: 2400 });
   });
 
   test('tables keep rows and cells', () => {

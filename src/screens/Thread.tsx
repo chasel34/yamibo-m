@@ -263,6 +263,7 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
         targetLoadPage.current = null;
       }
       const d = await getThread(tid, firstPage);
+      floorY.current.clear();
       setData(d);
       setPage(firstPage);
       setTotalPages(d.totalPages);

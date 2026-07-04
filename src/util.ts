@@ -133,13 +133,37 @@ function attr(tag: string, name: string): string {
   return decodeEntities((tag.match(new RegExp(`\\b${name}=["']([^"']+)["']`, 'i')) || [])[1] || '');
 }
 
-function imgUrlFromTag(tag: string): string | null {
+function positiveInt(value?: string | number | null): number | undefined {
+  const n = parseInt(String(value || ''), 10);
+  return n > 0 ? n : undefined;
+}
+
+function positiveIntAttr(tag: string, name: string): number | undefined {
+  return positiveInt(attr(tag, name));
+}
+
+function imgFromTag(tag: string): { src: string | null; width?: number; height?: number } {
   // Discuz lazy-loads big images via file="..."; src may be a placeholder.
   const file = attr(tag, 'file');
   const src = attr(tag, 'src');
   let url = file || src;
   if (file && src && SMILEY_RE.test(src) && !SMILEY_RE.test(file)) url = file;
-  return url ? absUrl(url) : null;
+  return {
+    src: url ? absUrl(url) : null,
+    width: positiveIntAttr(tag, 'width'),
+    height: positiveIntAttr(tag, 'height'),
+  };
+}
+
+function imgUrlFromTag(tag: string): string | null {
+  return imgFromTag(tag).src;
+}
+
+function imageSizeFromAttachment(att?: Attachment | null): { width?: number; height?: number } {
+  return {
+    width: positiveInt(att?.width),
+    height: positiveInt(att?.height),
+  };
 }
 
 function isImageAttachment(att?: Attachment | null): boolean {
@@ -386,16 +410,16 @@ export function parseMessage(
       const href = decodeEntities((tag.match(/\bhref=["']([^"']+)["']/i) || [])[1] || '');
       const safeHref = absUrl(href);
       const v = stripHtml(tag) || href;
-      const src = imgUrlFromTag(tag);
-      if (src && !SMILEY_RE.test(src)) blocks.push({ t: 'img', src, cap: v && v !== href ? v : '图片' });
+      const img = imgFromTag(tag);
+      if (img.src && !SMILEY_RE.test(img.src)) blocks.push({ t: 'img', src: img.src, cap: v && v !== href ? v : '图片', width: img.width, height: img.height });
       else if (safeHref && hasRichMarkup(tag.replace(/^<a\b[^>]*>|<\/a>$/gi, ''))) {
         const runs = richRunsFromHtml(tag.replace(/^<a\b[^>]*>|<\/a>$/gi, ''), { href: safeHref });
         if (runs.length) blocks.push({ t: 'rich', runs });
       } else if (safeHref) blocks.push({ t: 'link', v, href: safeHref });
       else pushText(tag);
     } else {
-      const src = imgUrlFromTag(tag);
-      if (src && !SMILEY_RE.test(src)) blocks.push({ t: 'img', src, cap: '图片' });
+      const img = imgFromTag(tag);
+      if (img.src && !SMILEY_RE.test(img.src)) blocks.push({ t: 'img', src: img.src, cap: '图片', width: img.width, height: img.height });
     }
     last = re.lastIndex;
   }
@@ -403,6 +427,27 @@ export function parseMessage(
 
   // Append attachments that weren't embedded inline above.
   if (attachments) {
+    const imageAttachments = Object.keys(attachments)
+      .map((aid) => {
+        const a = attachments[aid];
+        if (!isImageAttachment(a)) return null;
+        return {
+          path: a.attachment || '',
+          url: attachmentUrl(a),
+          ...imageSizeFromAttachment(a),
+        };
+      })
+      .filter((item): item is { path: string; url: string | null; width?: number; height?: number } => !!item && (!!item.width || !!item.height));
+    blocks.forEach((block) => {
+      if (block.t !== 'img' || (block.width && block.height)) return;
+      const match = imageAttachments.find((item) => {
+        const src = block.src || '';
+        return src !== '' && (src === item.url || (item.path !== '' && src.indexOf(item.path) >= 0));
+      });
+      if (!match) return;
+      block.width = block.width || match.width;
+      block.height = block.height || match.height;
+    });
     const shown = blocks.filter((b) => b.t === 'img').map((b) => b.src || '');
     const order = (Array.isArray(imagelist) && imagelist.length) ? imagelist : Object.keys(attachments);
     const appended = new Set<string>();
@@ -426,8 +471,7 @@ export function parseMessage(
         t: 'img',
         src: url,
         cap: a.description || a.imgalt || a.filename || '图片',
-        width: parseInt(a.width || '0', 10) || undefined,
-        height: parseInt(a.height || '0', 10) || undefined,
+        ...imageSizeFromAttachment(a),
       });
     });
     Object.keys(attachments).forEach((aid) => {
@@ -442,8 +486,7 @@ export function parseMessage(
           t: 'img',
           src: url,
           cap: a.description || a.imgalt || a.filename || '图片',
-          width: parseInt(a.width || '0', 10) || undefined,
-          height: parseInt(a.height || '0', 10) || undefined,
+          ...imageSizeFromAttachment(a),
         });
         return;
       }
