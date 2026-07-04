@@ -85,7 +85,6 @@ interface ReaderHtmlOptions {
   theme: ReaderThemeKey;
   fontSize: number;
   initialPage: number;
-  comments: number | null;
   isLast: boolean;
   complete: boolean;
   floorLabel?: string;
@@ -95,7 +94,6 @@ export function createReaderHtml(options: ReaderHtmlOptions): string {
   const T = READER_THEMES[options.theme];
   const weak = isWeakChapter(options.chapterType);
   const body = options.blocks.map((block) => blockHtml(block, options.fontSize)).join('');
-  const commentText = options.comments == null ? '点按加载，不打断阅读' : `${options.comments} 条 · 点按展开，不打断阅读`;
   const end = options.isLast ? `
     <section class="bookend">
       <div class="endicon">${options.complete ? '✓' : '♧'}</div>
@@ -146,7 +144,7 @@ th,td{border-top:1px solid ${T.line};border-left:1px solid ${T.line};padding:7px
   ${body}
   <div class="finis">${weak ? '· 楼主说明结束 ·' : options.chapterType === 'section' ? '· 本段完 ·' : '· 本话完 ·'}</div>
   <button class="floorlink" id="floorlink">↗ 对照原楼层${options.floorLabel ? ` · ${esc(options.floorLabel)}` : ''}</button>
-  <button class="comments" id="comments"><span class="bubble">↩</span><span><b>本章评论</b><small>${esc(commentText)}</small></span><em>›</em></button>
+  <button class="comments" id="comments"><span class="bubble">↩</span><span><b>本章评论</b><small>点按加载，不打断阅读</small></span><em>›</em></button>
   ${end}
 </main></div>
 <script>

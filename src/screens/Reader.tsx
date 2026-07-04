@@ -53,19 +53,44 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const trackWidth = React.useRef(1);
   const autoUpdateChecked = React.useRef(false);
   const chapterIdxRef = React.useRef(0);
-  const pageIdxRef = React.useRef(0);
 
   React.useEffect(() => {
     chapterIdxRef.current = chapterIdx;
   }, [chapterIdx]);
 
-  React.useEffect(() => {
-    pageIdxRef.current = pageIdx;
-  }, [pageIdx]);
-
   const setBook = React.useCallback((next: ReadingBook) => {
     bookRef.current = next;
     setBookState(next);
+  }, []);
+
+  const hydrateChapterFromCachedPages = React.useCallback((nextBook: ReadingBook, pid?: string) => {
+    if (!pid) return nextBook;
+    const chapterIndex = nextBook.chapters.findIndex((item) => item.pid === pid);
+    if (chapterIndex < 0) return nextBook;
+    let streamMatch: ReadingStreamPage | undefined;
+    let postMatch: ReadingStreamPage['posts'][number] | undefined;
+    for (const stream of pagesRef.current.values()) {
+      const post = stream.posts.find((item) => item.pid === pid);
+      if (post) {
+        streamMatch = stream;
+        postMatch = post;
+        break;
+      }
+    }
+    if (!streamMatch || !postMatch) return nextBook;
+    const chapter = nextBook.chapters[chapterIndex];
+    return {
+      ...nextBook,
+      ppp: streamMatch.ppp || nextBook.ppp,
+      chapters: nextBook.chapters.map((item, index) => (index === chapterIndex
+        ? {
+          ...item,
+          pos: postMatch.pos,
+          sourcePage: streamMatch.page,
+          blocks: stripLeadingChapterTitle(postMatch.blocks, chapter.title),
+        }
+        : item)),
+    };
   }, []);
 
   const popToThread = React.useCallback((params: { targetPid?: string; targetPage?: number } = {}) => {
@@ -151,8 +176,8 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       setUpdateHint('正在补全楼主内容…');
       const first = pagesRef.current.get(1) || await getReadingStream(tid, authorid, 1);
       const index = await scanAndSaveIndex(first, false);
-      const latest = readingIndexToBook(index, first.ppp || base.ppp);
       const currentPid = bookRef.current?.chapters[chapterIdxRef.current]?.pid;
+      const latest = hydrateChapterFromCachedPages(readingIndexToBook(index, first.ppp || base.ppp), currentPid);
       setBook(latest);
       const nextIdx = currentPid ? latest.chapters.findIndex((item) => item.pid === currentPid) : -1;
       const targetIdx = Math.max(0, Math.min(nextIdx >= 0 ? nextIdx : chapterIdxRef.current, latest.chapters.length - 1));
@@ -167,7 +192,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       setUpdateHint('暂时无法检查更新，已使用本地整理结果');
       setTimeout(() => setUpdateHint(null), 3200);
     }
-  }, [authorid, ensureChapter, scanAndSaveIndex, setBook, tid]);
+  }, [authorid, ensureChapter, hydrateChapterFromCachedPages, scanAndSaveIndex, setBook, tid]);
 
   const openLoadedBook = React.useCallback(async (nextBook: ReadingBook, settings: Awaited<ReturnType<typeof getReaderSettings>>, progress: ReadingProgress | null, skipResume = false) => {
     if (!nextBook.chapters.length) throw new Error('没有识别到可阅读的正文');
@@ -276,10 +301,6 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     if (!chapter) return;
     setPanel('comments');
     if (comments != null || commentsLoading) return;
-    // Loading comments flips comments?.length, which the html memo depends on and so
-    // forces a WebView reload; re-seed the pager to the current page (not the chapter
-    // start) so tapping 本章评论 from the last page doesn't jump the reader to page 0.
-    setSourcePage(pageIdxRef.current);
     setCommentsLoading(true);
     try {
       const pageHint = chapter.pos && book ? Math.ceil(chapter.pos / book.ppp) : undefined;
@@ -317,8 +338,8 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       const first = await getReadingStream(tid, authorid, 1);
       if (book.status === 'toc-ready' || first.totalPages > (book.source?.totalPages || 1)) {
         const index = await scanAndSaveIndex(first, false);
-        const nextBook = readingIndexToBook(index, first.ppp);
         const currentPid = chapter?.pid;
+        const nextBook = hydrateChapterFromCachedPages(readingIndexToBook(index, first.ppp), currentPid);
         setBook(nextBook);
         const nextIdx = currentPid ? nextBook.chapters.findIndex((item) => item.pid === currentPid) : -1;
         const targetIdx = Math.max(0, Math.min(nextIdx >= 0 ? nextIdx : chapterIdxRef.current, nextBook.chapters.length - 1));
@@ -334,7 +355,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     } finally {
       if (manual) setTimeout(() => setUpdateHint(null), 3200);
     }
-  }, [authorid, book, chapter?.pid, ensureChapter, scanAndSaveIndex, setBook, tid]);
+  }, [authorid, book, chapter?.pid, ensureChapter, hydrateChapterFromCachedPages, scanAndSaveIndex, setBook, tid]);
 
   React.useEffect(() => {
     if (phase !== 'reading' || !book || book.status === 'toc-ready' || autoUpdateChecked.current) return;
@@ -416,6 +437,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   }, [book, chapter, chapterIdx, jumpChapter, nav, openComments, viewOriginalFloor]);
 
   const T = READER_THEMES[themeKey];
+  const chapterCount = book?.chapters.length || 0;
   const html = React.useMemo(() => {
     if (!book || !chapter?.blocks) return '';
     return createReaderHtml({
@@ -427,12 +449,14 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       theme: themeKey,
       fontSize: READER_FONTS[fontIdx],
       initialPage: sourcePage,
-      comments: comments?.length ?? null,
-      isLast: chapterIdx === book.chapters.length - 1,
+      isLast: chapterIdx === chapterCount - 1,
       complete: book.statusText === '完结',
       floorLabel: chapter.pos ? `${chapter.pos} 楼` : undefined,
     });
-  }, [book, chapter, chapterIdx, comments?.length, fontIdx, sourcePage, themeKey]);
+  }, [
+    book?.statusText, book?.title, chapter?.blocks, chapter?.no, chapter?.pos,
+    chapter?.title, chapter?.type, chapterCount, chapterIdx, fontIdx, sourcePage, themeKey,
+  ]);
 
   const continueReading = async (restart = false) => {
     const target = restart ? 0 : Math.min((book?.chapters.length || 1) - 1, saved?.chapter || 0);
