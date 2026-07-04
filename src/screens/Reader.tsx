@@ -38,6 +38,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const [pageIdx, setPageIdx] = React.useState(0);
   const [sourcePage, setSourcePage] = React.useState(0);
   const [pageCount, setPageCount] = React.useState(1);
+  const [pageReady, setPageReady] = React.useState(false);
   const [chrome, setChrome] = React.useState(false);
   const [panel, setPanel] = React.useState<Panel>(null);
   const [themeKey, setThemeKey] = React.useState<ReaderThemeKey>('paper');
@@ -207,6 +208,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     const initialPage = !fresh && progress ? progress.page : 0;
     setPageIdx(initialPage);
     setSourcePage(initialPage);
+    setPageReady(false);
     if (!fresh && progress && !skipResume) setPhase('resume');
     else {
       await ensureChapter(initial);
@@ -274,19 +276,20 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const pct = book ? Math.max(1, Math.min(100, Math.round(((chapterIdx + (pageIdx + 1) / Math.max(1, pageCount)) / book.chapters.length) * 100))) : 1;
 
   React.useEffect(() => {
-    if (phase !== 'reading' || !book || !chapter) return;
+    if (phase !== 'reading' || !pageReady || !book || !chapter) return;
     saveReadingProgress(tid, { chapter: chapterIdx, page: pageIdx, pct, chapterTitle: chapter.title, pid: chapter.pid, ts: Date.now() });
-  }, [book, chapter, chapterIdx, pageIdx, pct, phase, tid]);
+  }, [book, chapter, chapterIdx, pageIdx, pageReady, pct, phase, tid]);
 
   const jumpChapter = React.useCallback(async (index: number, targetPage = 0) => {
     if (!book || index < 0 || index >= book.chapters.length) return;
     setPanel(null);
     setChrome(false);
+    setPageReady(false);
     setPhase('loading');
     try {
       await ensureChapter(index);
       setChapterIdx(index);
-      setPageIdx(targetPage);
+      setPageIdx(Math.max(0, targetPage));
       setSourcePage(targetPage);
       setPageCount(1);
       setComments(null);
@@ -406,12 +409,13 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     if (msg.type === 'page') {
       setPageIdx(msg.page || 0);
       setPageCount(Math.max(1, msg.pages || 1));
+      setPageReady(true);
     } else if (msg.type === 'toggleChrome') {
       setChrome((value) => !value);
     } else if (msg.type === 'nextChapter') {
       if (book && chapterIdx < book.chapters.length - 1) jumpChapter(chapterIdx + 1);
     } else if (msg.type === 'prevChapter') {
-      if (chapterIdx > 0) jumpChapter(chapterIdx - 1, 9999);
+      if (chapterIdx > 0) jumpChapter(chapterIdx - 1, -1);
     } else if (msg.type === 'comments') {
       openComments();
     } else if (msg.type === 'floor') {
@@ -461,6 +465,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const continueReading = async (restart = false) => {
     const target = restart ? 0 : Math.min((book?.chapters.length || 1) - 1, saved?.chapter || 0);
     setPhase('loading');
+    setPageReady(false);
     try {
       await ensureChapter(target);
       setChapterIdx(target);
@@ -526,7 +531,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
           </View>
         </View>
       )}
-      {!chrome && (
+      {!chrome && pageReady && (
         <View pointerEvents="none" style={{ position: 'absolute', left: 27, right: 27, bottom: 14, flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text numberOfLines={1} style={{ maxWidth: '60%', color: T.soft, fontFamily: FONTS.head, fontSize: 11.5 }}>{chapter.title}</Text>
           <Text style={{ color: T.soft, fontFamily: FONTS.head, fontSize: 11.5, fontVariant: ['tabular-nums'] }}>{pageIdx + 1}/{pageCount} · {pct}%</Text>

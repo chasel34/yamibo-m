@@ -108,7 +108,7 @@ export function createReaderHtml(options: ReaderHtmlOptions): string {
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:${T.bg};color:${T.ink}}
 body{font-family:"Noto Serif SC","Songti SC",Georgia,serif}
 #pager{position:absolute;inset:0;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
-#flow{height:calc(100vh - 108px);margin:52px 27px 56px;column-width:calc(100vw - 54px);column-gap:54px;column-fill:auto;will-change:transform;transform:translateX(0)}
+#flow{height:calc(100vh - 108px);margin:52px 27px 56px;column-width:calc(100vw - 54px);column-gap:54px;column-fill:auto;will-change:transform;transform:translateX(0);opacity:${options.initialPage < 0 ? 0 : 1}}
 #flow>*{break-inside:avoid;-webkit-column-break-inside:avoid}
 #flow p,#flow aside,#flow a,#flow th,#flow td{overflow-wrap:anywhere;word-break:break-word}
 #flow p{break-inside:auto;-webkit-column-break-inside:auto;font-size:${options.fontSize}px;line-height:1.95;margin:0 0 .95em;text-indent:2em;text-align:justify;letter-spacing:.01em}
@@ -149,6 +149,8 @@ th,td{border-top:1px solid ${T.line};border-left:1px solid ${T.line};padding:7px
 </main></div>
 <script>
 const pager=document.getElementById('pager'),flow=document.getElementById('flow');
+const initialPage=${options.initialPage};
+const startAtEnd=initialPage<0;
 let page=0,pages=1,W=innerWidth,startX=0,startY=0,dragging=false,swiping=false;
 function send(value){
   const data=JSON.stringify(value);
@@ -156,11 +158,13 @@ function send(value){
   else window.parent.postMessage({__yamiboReader:true,data},'*');
 }
 function setX(px,animate){flow.style.transition=animate?'transform .28s cubic-bezier(.22,.61,.36,1)':'none';flow.style.transform='translateX('+px+'px)';}
-function render(animate){setX(-page*W,animate);send({type:'page',page,pages});}
+function render(animate){setX(-page*W,animate);flow.style.opacity='1';send({type:'page',page,pages});}
+function hasPendingImages(){return startAtEnd&&Array.from(document.images).some(img=>!img.complete)}
 function measure(){
+  if(hasPendingImages())return;
   W=innerWidth;
   pages=Math.max(1,Math.round(flow.scrollWidth/W));
-  page=Math.max(0,Math.min(pages-1,${Math.max(0, options.initialPage)}));
+  page=startAtEnd?pages-1:Math.max(0,Math.min(pages-1,Math.max(0,initialPage)));
   render(false);
 }
 function go(dir){
@@ -200,6 +204,7 @@ document.getElementById('comments').addEventListener('click',()=>send({type:'com
 document.getElementById('floorlink').addEventListener('click',()=>send({type:'floor'}));
 document.querySelectorAll('[data-image]').forEach(el=>el.addEventListener('click',()=>send({type:'image',src:el.dataset.image})));
 document.querySelectorAll('a[data-link]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();send({type:'link',href:el.href})}));
-addEventListener('resize',measure);addEventListener('load',()=>setTimeout(measure,30));setTimeout(measure,100);
+document.querySelectorAll('img').forEach(img=>{if(!img.complete){img.addEventListener('load',()=>setTimeout(measure,30),{once:true});img.addEventListener('error',()=>setTimeout(measure,30),{once:true})}});
+addEventListener('resize',measure);addEventListener('load',()=>setTimeout(measure,30));setTimeout(measure,100);setTimeout(measure,800);
 </script></body></html>`;
 }
