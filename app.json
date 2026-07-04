@@ -33,7 +33,16 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#fcfbfa",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain"
+        }
+      ]
     ],
     "extra": {
       "eas": {
