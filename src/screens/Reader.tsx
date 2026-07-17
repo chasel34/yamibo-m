@@ -7,7 +7,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StatusBar, Avatar } from '../components/ui';
 import Icon from '../components/Icon';
 import ReaderSurface, { type ReaderSurfaceHandle } from '../components/ReaderSurface';
-import { createReaderHtml } from '../readerHtml';
+import { createChapterFragment, createReaderShellHtml } from '../readerHtml';
 import { getChapterComments, getReadingStream, resolvePostPage } from '../api';
 import { parseForumLink } from '../forumLinks';
 import {
@@ -36,9 +36,11 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const [saved, setSaved] = React.useState<ReadingProgress | null>(null);
   const [chapterIdx, setChapterIdx] = React.useState(0);
   const [pageIdx, setPageIdx] = React.useState(0);
-  const [sourcePage, setSourcePage] = React.useState(0);
   const [pageCount, setPageCount] = React.useState(1);
   const [pageReady, setPageReady] = React.useState(false);
+  // 首次进入 reading 后置 true 且换章/加载期间保持：ReaderSurface（含 shell 文档）从此常驻，
+  // 换章只注入内容，绝不 unmount/换 source —— 这是本屏性能与无白闪的根基。
+  const [surfaceLive, setSurfaceLive] = React.useState(false);
   const [chrome, setChrome] = React.useState(false);
   const [panel, setPanel] = React.useState<Panel>(null);
   const [themeKey, setThemeKey] = React.useState<ReaderThemeKey>('paper');
@@ -53,6 +55,14 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const autoUpdateChecked = React.useRef(false);
   const chapterIdxRef = React.useRef(0);
   const surfaceRef = React.useRef<ReaderSurfaceHandle>(null);
+  // shell 收到并渲染后应处于的位置。ready（含 WebView 进程重启后的重载）时按它重建窗口。
+  const targetRef = React.useRef({ idx: 0, page: 0 });
+  const readyRef = React.useRef(false);
+  // 已注入 shell 的章节集合。以 page 事件回传的 win 为准同步（shell 会自行裁窗）。
+  const postedRef = React.useRef(new Set<number>());
+  const needInflightRef = React.useRef(new Map<number, Promise<boolean>>());
+  const streamInflightRef = React.useRef(new Map<number, Promise<ReadingStreamPage>>());
+  const shellRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     chapterIdxRef.current = chapterIdx;
@@ -105,6 +115,25 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     popToThread();
   }, [navigation, popToThread]);
 
+  // 相邻章预取与用户跳章可能并发拉同一页：in-flight 去重，网络请求只发一次。
+  const fetchStreamPage = React.useCallback((pageNo: number): Promise<ReadingStreamPage> => {
+    const cached = pagesRef.current.get(pageNo);
+    if (cached) return Promise.resolve(cached);
+    let inflight = streamInflightRef.current.get(pageNo);
+    if (!inflight) {
+      inflight = getReadingStream(tid, authorid, pageNo).then((stream) => {
+        pagesRef.current.set(pageNo, stream);
+        streamInflightRef.current.delete(pageNo);
+        return stream;
+      }, (e) => {
+        streamInflightRef.current.delete(pageNo);
+        throw e;
+      });
+      streamInflightRef.current.set(pageNo, inflight);
+    }
+    return inflight;
+  }, [authorid, tid]);
+
   const ensureChapter = React.useCallback(async (index: number): Promise<Block[]> => {
     const current = bookRef.current;
     if (!current) throw new Error('阅读数据尚未载入');
@@ -116,11 +145,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     for (let page = estimated; page <= current.totalPages; page += 1) order.push(page);
     for (let page = estimated - 1; page >= 1; page -= 1) order.push(page);
     for (const page of order) {
-      let stream = pagesRef.current.get(page);
-      if (!stream) {
-        stream = await getReadingStream(tid, authorid, page);
-        pagesRef.current.set(page, stream);
-      }
+      const stream = await fetchStreamPage(page);
       const postMap = new Map(stream.posts.map((post) => [post.pid, post]));
       const latest = bookRef.current!;
       let changed = false;
@@ -136,7 +161,67 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       if (found) return found;
     }
     throw new Error('没有找到这一章的正文');
-  }, [authorid, setBook, tid]);
+  }, [fetchStreamPage, setBook]);
+
+  const fragmentFor = React.useCallback((index: number): string | null => {
+    const current = bookRef.current;
+    const target = current?.chapters[index];
+    if (!current || !target || !target.blocks) return null;
+    return createChapterFragment({
+      chapterNo: target.no,
+      chapterTitle: target.title.replace(/^(?:第\s*\d+\s*[话話]\s*[·:：\-]?\s*)/i, ''),
+      chapterType: target.type,
+      blocks: target.blocks,
+      isLast: index === current.chapters.length - 1,
+      complete: current.statusText === '完结',
+      floorLabel: target.pos ? `${target.pos} 楼` : undefined,
+    });
+  }, []);
+
+  // 整窗重建（初次进入、跳章、重新整理后）：同一 shell 文档内替换 DOM，无 reload。
+  const postWindow = React.useCallback((index: number, pageNo: number) => {
+    const current = bookRef.current;
+    if (!current || !readyRef.current) return;
+    const html = fragmentFor(index);
+    if (html == null) return;
+    postedRef.current = new Set([index]);
+    surfaceRef.current?.post({
+      type: 'window',
+      total: current.chapters.length,
+      idx: index,
+      page: pageNo,
+      chapters: [{ idx: index, html }],
+    });
+  }, [fragmentFor]);
+
+  // 预注入相邻章：blocks 就绪后 add 进 shell，用户滑到章边界时下一章已在多列流里，
+  // 跨章翻页与章内翻页完全一致。失败静默——用户真滑到边界时 blocked 会带重试。
+  const pushNeighbor = React.useCallback((index: number): Promise<boolean> => {
+    const current = bookRef.current;
+    if (!current || index < 0 || index >= current.chapters.length) return Promise.resolve(false);
+    if (postedRef.current.has(index)) return Promise.resolve(true);
+    const inflight = needInflightRef.current.get(index);
+    if (inflight) return inflight;
+    const task = (async () => {
+      try {
+        await ensureChapter(index);
+        if (!readyRef.current) return false;
+        const html = fragmentFor(index);
+        if (html == null) return false;
+        if (!postedRef.current.has(index)) {
+          postedRef.current.add(index);
+          surfaceRef.current?.post({ type: 'add', idx: index, html });
+        }
+        return true;
+      } catch (e) {
+        return false;
+      } finally {
+        needInflightRef.current.delete(index);
+      }
+    })();
+    needInflightRef.current.set(index, task);
+    return task;
+  }, [ensureChapter, fragmentFor]);
 
   const loadAllAuthorPages = React.useCallback(async (first: ReadingStreamPage, progress = true) => {
     const pages = [first];
@@ -182,17 +267,19 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       const nextIdx = currentPid ? latest.chapters.findIndex((item) => item.pid === currentPid) : -1;
       const targetIdx = Math.max(0, Math.min(nextIdx >= 0 ? nextIdx : chapterIdxRef.current, latest.chapters.length - 1));
       if (targetIdx !== chapterIdxRef.current) setChapterIdx(targetIdx);
-      // readingIndexToBook returns chapters without `blocks`; the html memo blanks the
-      // reader until they exist. pagesRef is warm from the scan, so re-ensure the now-
-      // current chapter (a network-free remap) before the swap can show an empty page.
+      // readingIndexToBook 返回的章节不带 blocks；pagesRef 在扫描后是满的，re-ensure 当前章
+      // 只是一次无网络重映射。窗口内片段按旧章节序渲染，整窗重建（同文档、无 reload）。
       try { await ensureChapter(targetIdx); } catch (e) {}
+      const keepPage = nextIdx >= 0 ? targetRef.current.page : 0;
+      targetRef.current = { idx: targetIdx, page: keepPage };
+      postWindow(targetIdx, keepPage);
       setUpdateHint('已补全楼主内容');
       setTimeout(() => setUpdateHint(null), 2800);
     } catch (e) {
       setUpdateHint('暂时无法检查更新，已使用本地整理结果');
       setTimeout(() => setUpdateHint(null), 3200);
     }
-  }, [authorid, ensureChapter, hydrateChapterFromCachedPages, scanAndSaveIndex, setBook, tid]);
+  }, [authorid, ensureChapter, hydrateChapterFromCachedPages, postWindow, scanAndSaveIndex, setBook, tid]);
 
   const openLoadedBook = React.useCallback(async (nextBook: ReadingBook, settings: Awaited<ReturnType<typeof getReaderSettings>>, progress: ReadingProgress | null, skipResume = false) => {
     if (!nextBook.chapters.length) throw new Error('没有识别到可阅读的正文');
@@ -206,17 +293,23 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     setChapterIdx(initial);
     const initialPage = !fresh && progress ? progress.page : 0;
     setPageIdx(initialPage);
-    setSourcePage(initialPage);
+    targetRef.current = { idx: initial, page: initialPage };
     setPageReady(false);
     if (!fresh && progress && !skipResume) setPhase('resume');
     else {
       await ensureChapter(initial);
+      setSurfaceLive(true);
       setPhase('reading');
     }
   }, [ensureChapter, fresh, initialFromProgress, setBook]);
 
   const load = React.useCallback(async () => {
     setPhase('checkingCache');
+    setSurfaceLive(false);
+    readyRef.current = false;
+    postedRef.current = new Set();
+    needInflightRef.current = new Map();
+    streamInflightRef.current = new Map();
     let organizingStarted = false;
     try {
       if (fresh) await clearReadingIndex(tid, authorid);
@@ -316,23 +409,25 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     setPanel(null);
     setChrome(false);
     setPageReady(false);
-    // 目标章免网络就绪时跳过 loading 分支（它会整棵卸载再重建 WebView），让 html memo 变化驱动
-    // 实例原地换文档。仅确需联网拉取时才走 loading。
+    // 跳章 = 同一 shell 文档内整窗重建，surface 常驻不卸载；仅确需联网时叠一层 loading 遮罩。
     const needsFetch = !chapterReady(index);
     if (needsFetch) setPhase('loading');
     try {
       await ensureChapter(index);
+      const pageNo = Math.max(0, targetPage);
+      targetRef.current = { idx: index, page: pageNo };
       setChapterIdx(index);
-      setPageIdx(Math.max(0, targetPage));
-      setSourcePage(targetPage);
+      setPageIdx(pageNo);
       setPageCount(1);
       setComments(null);
+      postWindow(index, pageNo);
       setPhase('reading');
     } catch (e) {
+      // 加载失败不再整屏报错：保留当前窗口继续可读，toast 提示后可重试。
       nav.toast(e.message || '章节加载失败');
-      setPhase('error');
+      setPhase('reading');
     }
-  }, [book, chapterReady, ensureChapter, nav]);
+  }, [book, chapterReady, ensureChapter, nav, postWindow]);
 
   const openComments = React.useCallback(async () => {
     if (!chapter) return;
@@ -383,6 +478,9 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
         if (targetIdx !== chapterIdxRef.current) setChapterIdx(targetIdx);
         // Re-hydrate blocks for the now-current chapter (see completeScanInBackground).
         try { await ensureChapter(targetIdx); } catch (e) {}
+        const keepPage = nextIdx >= 0 ? targetRef.current.page : 0;
+        targetRef.current = { idx: targetIdx, page: keepPage };
+        postWindow(targetIdx, keepPage);
         setUpdateHint('发现新内容，已加入目录');
       } else if (manual) {
         setUpdateHint('已是最新整理结果');
@@ -392,7 +490,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     } finally {
       if (manual) setTimeout(() => setUpdateHint(null), 3200);
     }
-  }, [authorid, book, chapter?.pid, ensureChapter, hydrateChapterFromCachedPages, scanAndSaveIndex, setBook, tid]);
+  }, [authorid, book, chapter?.pid, ensureChapter, hydrateChapterFromCachedPages, postWindow, scanAndSaveIndex, setBook, tid]);
 
   React.useEffect(() => {
     if (phase !== 'reading' || !book || book.status === 'toc-ready' || autoUpdateChecked.current) return;
@@ -406,6 +504,10 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       setPanel(null);
       setChrome(false);
       setUpdateHint(null);
+      // 重整是重活：卸载 surface 走整理进度屏，完成后重挂载，shell ready 时按 targetRef 重建窗口。
+      setSurfaceLive(false);
+      readyRef.current = false;
+      postedRef.current = new Set();
       setPhase('organizing');
       try {
         await clearReadingIndex(tid, authorid);
@@ -415,11 +517,13 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
         const currentPid = chapter?.pid;
         setBook(nextBook);
         const nextIdx = currentPid ? nextBook.chapters.findIndex((item) => item.pid === currentPid) : 0;
-        const target = nextIdx >= 0 ? nextIdx : Math.min(chapterIdx, nextBook.chapters.length - 1);
-        setChapterIdx(Math.max(0, target));
+        const target = Math.max(0, nextIdx >= 0 ? nextIdx : Math.min(chapterIdx, nextBook.chapters.length - 1));
+        setChapterIdx(target);
         setPageIdx(0);
-        setSourcePage(0);
-        await ensureChapter(Math.max(0, target));
+        targetRef.current = { idx: target, page: 0 };
+        setPageReady(false);
+        await ensureChapter(target);
+        setSurfaceLive(true);
         setPhase('reading');
         nav.toast('已重新整理全文');
       } catch (e) {
@@ -440,22 +544,43 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const onReaderMessage = React.useCallback((raw: string) => {
     let msg: any;
     try { msg = JSON.parse(raw); } catch (e) { return; }
-    if (msg.type === 'page') {
+    if (msg.type === 'ready') {
+      // shell 载入（含 WebView 进程被杀后的自动重载）：同步样式并按 targetRef 重建窗口。
+      readyRef.current = true;
+      surfaceRef.current?.post({ type: 'style', fs: READER_FONTS[fontIdx], colors: READER_THEMES[themeKey] });
+      postWindow(targetRef.current.idx, targetRef.current.page);
+    } else if (msg.type === 'page') {
+      if (Array.isArray(msg.win)) postedRef.current = new Set(msg.win.map((value: any) => value | 0));
+      const idx = Math.max(0, msg.idx | 0);
+      targetRef.current = { idx, page: msg.page || 0 };
       setPageIdx(msg.page || 0);
       setPageCount(Math.max(1, msg.pages || 1));
       setPageReady(true);
+      if (idx !== chapterIdxRef.current) {
+        setChapterIdx(idx);
+        setComments(null);
+      }
+    } else if (msg.type === 'need') {
+      pushNeighbor(msg.idx | 0);
+    } else if (msg.type === 'blocked') {
+      // 用户滑到边界但邻章尚未注入：提示加载中并重试；成功后 shell 会收到 add，再滑即连续。
+      const idx = msg.idx | 0;
+      setUpdateHint(msg.dir > 0 ? '正在载入下一章…' : '正在载入上一章…');
+      pushNeighbor(idx).then((ok) => {
+        if (ok) { setUpdateHint(null); return; }
+        setUpdateHint('章节加载失败，请检查网络后重试');
+        setTimeout(() => setUpdateHint(null), 2600);
+      });
     } else if (msg.type === 'toggleChrome') {
       setChrome((value) => !value);
-    } else if (msg.type === 'nextChapter') {
-      if (book && chapterIdx < book.chapters.length - 1) jumpChapter(chapterIdx + 1);
-    } else if (msg.type === 'prevChapter') {
-      if (chapterIdx > 0) jumpChapter(chapterIdx - 1, -1);
     } else if (msg.type === 'comments') {
       openComments();
     } else if (msg.type === 'floor') {
       viewOriginalFloor();
     } else if (msg.type === 'image') {
-      const images = (chapter?.blocks || []).filter((block) => block.t === 'img').map((block: any) => ({ src: block.src, cap: block.cap }));
+      const sourceIdx = typeof msg.idx === 'number' && msg.idx >= 0 ? msg.idx : chapterIdxRef.current;
+      const blocks = bookRef.current?.chapters[sourceIdx]?.blocks || [];
+      const images = blocks.filter((block) => block.t === 'img').map((block: any) => ({ src: block.src, cap: block.cap }));
       const index = Math.max(0, images.findIndex((image) => image.src === msg.src));
       nav.openViewer(images.length ? images : [{ src: msg.src, cap: '图片' }], index, book?.title);
     } else if (msg.type === 'link') {
@@ -472,36 +597,21 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
         Linking.openURL(href).catch(() => nav.toast('无法打开这个链接'));
       }
     }
-  }, [book, chapter, chapterIdx, jumpChapter, nav, openComments, viewOriginalFloor]);
+  }, [book?.title, fontIdx, nav, openComments, postWindow, pushNeighbor, themeKey, viewOriginalFloor]);
+
+  // 相邻章预取：当前章一变（含滑动跨章）就把 ±1 章准备好并注入 shell，
+  // 让绝大多数跨章翻页发生时下一章早已在多列流里。
+  React.useEffect(() => {
+    if (phase !== 'reading' || !surfaceLive) return;
+    pushNeighbor(chapterIdx + 1);
+    pushNeighbor(chapterIdx - 1);
+  }, [chapterIdx, phase, pushNeighbor, surfaceLive]);
 
   const T = READER_THEMES[themeKey];
-  const chapterCount = book?.chapters.length || 0;
-  const html = React.useMemo(() => {
-    if (!book || !chapter?.blocks) return '';
-    return createReaderHtml({
-      title: book.title,
-      chapterNo: chapter.no,
-      chapterTitle: chapter.title.replace(/^(?:第\s*\d+\s*[话話]\s*[·:：\-]?\s*)/i, ''),
-      chapterType: chapter.type,
-      blocks: chapter.blocks,
-      // 字号/主题只做首帧初始值：它们变化时走 surfaceRef 注入更新（见下方 effect），不重生成
-      // HTML，因此故意不进 deps —— 否则整段 HTML 重建会让 WebView reload 白闪。
-      theme: themeKey,
-      fontSize: READER_FONTS[fontIdx],
-      initialPage: sourcePage,
-      isLast: chapterIdx === chapterCount - 1,
-      complete: book.statusText === '完结',
-      floorLabel: chapter.pos ? `${chapter.pos} 楼` : undefined,
-    });
-  }, [
-    book?.statusText, book?.title, chapter?.blocks, chapter?.no, chapter?.pos,
-    chapter?.title, chapter?.type, chapterCount, chapterIdx, sourcePage,
-  ]);
 
-  // 字号/主题变化时注入更新（首帧跳过：HTML 已带正确初始值）。文档保持当前页原地重排，不 reload。
-  const styleInjectReady = React.useRef(false);
+  // 字号/主题变化时注入更新：shell 只改 CSS 变量并原地重排（保持当前章与章内页），不 reload。
+  // ready 之前的注入会被静默丢弃，shell ready 时会主动同步一次当前样式，因此无需跳过首帧。
   React.useEffect(() => {
-    if (!styleInjectReady.current) { styleInjectReady.current = true; return; }
     surfaceRef.current?.post({ type: 'style', fs: READER_FONTS[fontIdx], colors: READER_THEMES[themeKey] });
   }, [fontIdx, themeKey]);
 
@@ -516,12 +626,14 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       setChapterIdx(target);
       const targetPage = restart ? 0 : saved?.page || 0;
       setPageIdx(targetPage);
-      setSourcePage(targetPage);
+      targetRef.current = { idx: target, page: targetPage };
+      setSurfaceLive(true);
       setPhase('reading');
     } catch (e) { setPhase('error'); }
   };
 
-  if (phase === 'checkingCache' || phase === 'loading') {
+  // surface 一旦常驻（surfaceLive），loading 只作遮罩叠加，不再整屏早退——那会卸载 WebView。
+  if (phase === 'checkingCache' || (phase === 'loading' && !surfaceLive)) {
     return <ReaderState T={T} icon="loading" title={phase === 'checkingCache' ? '正在检查整理结果…' : '正在载入…'} onBack={goBack} />;
   }
   if (phase === 'organizing') {
@@ -564,11 +676,21 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     return <ReaderState T={T} icon="wave" title="没有找到这一章" action="返回" onAction={goBack} onBack={goBack} />;
   }
 
+  // shell 只生成一次（含此刻的主题/字号作首帧初始值），此后 surface 常驻、内容全走注入。
+  if (shellRef.current == null) {
+    shellRef.current = createReaderShellHtml({ theme: themeKey, fontSize: READER_FONTS[fontIdx] });
+  }
+
   return (
     <View style={{ flex: 1, zIndex: 100, backgroundColor: T.bg }}>
       <View style={{ flex: 1, zIndex: 0 }}>
-        <ReaderSurface ref={surfaceRef} html={html} backgroundColor={T.bg} onMessage={onReaderMessage} />
+        <ReaderSurface ref={surfaceRef} html={shellRef.current} backgroundColor={T.bg} onMessage={onReaderMessage} />
       </View>
+      {phase === 'loading' && (
+        <View style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: `${T.bg}b3`, zIndex: 70, elevation: 70 }}>
+          <ActivityIndicator color={T.accent} size="large" />
+        </View>
+      )}
       {updateHint && (
         <View pointerEvents="none" style={{ position: 'absolute', top: chrome ? 136 : 58, left: 20, right: 20, alignItems: 'center', zIndex: 60, elevation: 60 }}>
           <View style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, backgroundColor: T.chrome, borderWidth: 1, borderColor: T.line }}>
