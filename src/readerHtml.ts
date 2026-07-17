@@ -105,39 +105,44 @@ export function createReaderHtml(options: ReaderHtmlOptions): string {
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{width:100%;height:100%;margin:0;overflow:hidden;background:${T.bg};color:${T.ink}}
+/* 主题色与字号收进 CSS 自定义属性：初始值来自 options（保证首帧正确），主题/字号切换时脚本
+   只改这些变量即可原地重排，无需整文档 reload。行高等无主题依赖的量保持字面量。 */
+:root{--bg:${T.bg};--ink:${T.ink};--accent:${T.accent};--soft:${T.soft};--line:${T.line};--chrome:${T.chrome};--fs:${options.fontSize}px}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--ink)}
 body{font-family:"Noto Serif SC","Songti SC",Georgia,serif}
 #pager{position:absolute;inset:0;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 #flow{height:calc(100vh - 108px);margin:52px 27px 56px;column-width:calc(100vw - 54px);column-gap:54px;column-fill:auto;will-change:transform;transform:translateX(0);opacity:${options.initialPage < 0 ? 0 : 1}}
 #flow>*{break-inside:avoid;-webkit-column-break-inside:avoid}
 #flow p,#flow aside,#flow a,#flow th,#flow td{overflow-wrap:anywhere;word-break:break-word}
-#flow p{break-inside:auto;-webkit-column-break-inside:auto;font-size:${options.fontSize}px;line-height:1.95;margin:0 0 .95em;text-indent:2em;text-align:justify;letter-spacing:.01em}
+#flow p{break-inside:auto;-webkit-column-break-inside:auto;font-size:var(--fs);line-height:1.95;margin:0 0 .95em;text-indent:2em;text-align:justify;letter-spacing:.01em}
 .chapter{text-align:center;padding:34px 0 30px}
-.chapter .no{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:12px;font-weight:700;letter-spacing:3px;color:${options.chapterType === 'chapter' ? T.accent : T.soft}}
-.chapter h1{font-size:${options.fontSize + 3}px;font-weight:600;line-height:1.4;margin:12px 6px 0}
-.chapter.note h1,.chapter.toc h1{font-size:${options.fontSize - 1}px;color:${T.soft}}
-.chapter i{display:block;width:30px;height:2px;background:${options.chapterType === 'chapter' ? T.accent : T.soft};opacity:.5;margin:20px auto 0}
-aside{border-left:2px solid ${T.accent};padding:4px 0 4px 14px;margin:6px 0 1em;color:${T.soft};font-size:${options.fontSize - 2}px;line-height:1.75}
-aside strong{display:block;color:${T.accent};font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:${options.fontSize - 5}px;margin-bottom:5px}
-a{color:${T.accent};text-underline-offset:3px}
-.b{font-weight:700}.accent{color:${T.accent}}.muted{color:${T.soft}}.small{font-size:${options.fontSize - 3}px}.large{font-size:${options.fontSize + 2}px}
-.table-wrap{width:100%;overflow:hidden;margin:2px 0 1.1em;border:1px solid ${T.line};border-radius:10px;background:${T.chrome}}
-table{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:${options.fontSize - 5}px;line-height:1.55}
-th,td{border-top:1px solid ${T.line};border-left:1px solid ${T.line};padding:7px 8px;vertical-align:top;text-align:left}tr:first-child th,tr:first-child td{border-top:0}th:first-child,td:first-child{border-left:0}th{color:${T.ink};font-weight:700;background:${T.bg}}td{color:${T.soft}}
-.image{display:block;width:100%;padding:0;border:0;background:${T.chrome};border-radius:10px;overflow:hidden;margin:4px 0 1.1em}
+.chapter .no{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:12px;font-weight:700;letter-spacing:3px;color:${options.chapterType === 'chapter' ? 'var(--accent)' : 'var(--soft)'}}
+.chapter h1{font-size:calc(var(--fs) + 3px);font-weight:600;line-height:1.4;margin:12px 6px 0}
+.chapter.note h1,.chapter.toc h1{font-size:calc(var(--fs) - 1px);color:var(--soft)}
+.chapter i{display:block;width:30px;height:2px;background:${options.chapterType === 'chapter' ? 'var(--accent)' : 'var(--soft)'};opacity:.5;margin:20px auto 0}
+aside{border-left:2px solid var(--accent);padding:4px 0 4px 14px;margin:6px 0 1em;color:var(--soft);font-size:calc(var(--fs) - 2px);line-height:1.75}
+aside strong{display:block;color:var(--accent);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:calc(var(--fs) - 5px);margin-bottom:5px}
+a{color:var(--accent);text-underline-offset:3px}
+.b{font-weight:700}.accent{color:var(--accent)}.muted{color:var(--soft)}.small{font-size:calc(var(--fs) - 3px)}.large{font-size:calc(var(--fs) + 2px)}
+.table-wrap{width:100%;overflow:hidden;margin:2px 0 1.1em;border:1px solid var(--line);border-radius:10px;background:var(--chrome)}
+table{width:100%;border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:calc(var(--fs) - 5px);line-height:1.55}
+th,td{border-top:1px solid var(--line);border-left:1px solid var(--line);padding:7px 8px;vertical-align:top;text-align:left}tr:first-child th,tr:first-child td{border-top:0}th:first-child,td:first-child{border-left:0}th{color:var(--ink);font-weight:700;background:var(--bg)}td{color:var(--soft)}
+.image{display:block;width:100%;padding:0;border:0;background:var(--chrome);border-radius:10px;overflow:hidden;margin:4px 0 1.1em}
 .image img{display:block;width:100%;height:auto;max-height:54vh;object-fit:contain}
-.placeholder{height:200px;color:${T.soft};background:repeating-linear-gradient(135deg,${T.line} 0 9px,transparent 9px 18px),${T.chrome}}
-.placeholder span{background:${T.bg};padding:4px 9px;border-radius:6px}
-.finis{text-align:center;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:${options.fontSize - 4}px;color:${T.soft};letter-spacing:2px;padding:22px 0 18px}
-.floorlink{display:block;width:100%;border:0;background:transparent;color:${T.soft};font:500 ${options.fontSize - 6}px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;text-align:center;padding:2px 0 18px}
-.comments{width:100%;display:flex;align-items:center;gap:12px;padding:15px 16px;border:1px solid ${T.line};border-radius:14px;background:${T.chrome};color:${T.ink};text-align:left;margin:4px 0 16px}
-.comments .bubble{color:${T.accent};font-size:21px}.comments b{display:block;font:600 ${options.fontSize - 5}px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
-.comments small{display:block;color:${T.soft};font:400 ${options.fontSize - 7}px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin-top:3px}
-.comments em{margin-left:auto;color:${T.soft};font-style:normal}
+.placeholder{height:200px;color:var(--soft);background:repeating-linear-gradient(135deg,var(--line) 0 9px,transparent 9px 18px),var(--chrome)}
+.placeholder span{background:var(--bg);padding:4px 9px;border-radius:6px}
+.finis{text-align:center;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-size:calc(var(--fs) - 4px);color:var(--soft);letter-spacing:2px;padding:22px 0 18px}
+/* .floorlink/.comments/.bookend 的字号用 calc(var(--fs)…)：拆出 font-size 单独写，避免 calc()
+   落进 font 简写在部分 WebKit 上被整条丢弃，连带 family/weight 一起失效。 */
+.floorlink{display:block;width:100%;border:0;background:transparent;color:var(--soft);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-weight:500;font-size:calc(var(--fs) - 6px);text-align:center;padding:2px 0 18px}
+.comments{width:100%;display:flex;align-items:center;gap:12px;padding:15px 16px;border:1px solid var(--line);border-radius:14px;background:var(--chrome);color:var(--ink);text-align:left;margin:4px 0 16px}
+.comments .bubble{color:var(--accent);font-size:21px}.comments b{display:block;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-weight:600;font-size:calc(var(--fs) - 5px)}
+.comments small{display:block;color:var(--soft);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-weight:400;font-size:calc(var(--fs) - 7px);margin-top:3px}
+.comments em{margin-left:auto;color:var(--soft);font-style:normal}
 .bookend{text-align:center;padding:30px 10px 24px}
-.endicon{width:46px;height:46px;border-radius:13px;margin:0 auto 16px;background:${T.accent};color:#fff;display:flex;align-items:center;justify-content:center;font:700 22px sans-serif}
-.bookend h2{font:700 ${options.fontSize}px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0}
-.bookend p{font-size:${options.fontSize - 4}px;color:${T.soft};text-indent:0;text-align:center;margin-top:8px}
+.endicon{width:46px;height:46px;border-radius:13px;margin:0 auto 16px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font:700 22px sans-serif}
+.bookend h2{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;font-weight:700;font-size:var(--fs);margin:0}
+.bookend p{font-size:calc(var(--fs) - 4px);color:var(--soft);text-indent:0;text-align:center;margin-top:8px}
 </style></head>
 <body><div id="pager"><main id="flow">
   <header class="chapter ${esc(options.chapterType || 'chapter')}"><div class="no">${weak ? '说明' : options.chapterType === 'section' ? '无标题正文段' : `第 ${options.chapterNo} 话`}</div><h1>${esc(options.chapterTitle)}</h1><i></i></header>
@@ -151,7 +156,11 @@ th,td{border-top:1px solid ${T.line};border-left:1px solid ${T.line};padding:7px
 const pager=document.getElementById('pager'),flow=document.getElementById('flow');
 const initialPage=${options.initialPage};
 const startAtEnd=initialPage<0;
-let page=0,pages=1,W=innerWidth,startX=0,startY=0,dragging=false,swiping=false;
+// 页宽必须与多列步进（100vw）逐像素一致：innerWidth 是整数，而安卓上 100vw 常是小数
+// （如 392.7px），每页零点几像素的误差翻到 40+ 页会累计成 20-30px 的横向偏移（内容不居中）。
+// documentElement 的 rect 宽度就是精确的视口小数宽度。
+function vw(){return document.documentElement.getBoundingClientRect().width||innerWidth}
+let page=0,pages=1,W=vw(),startX=0,startY=0,dragging=false,swiping=false;
 function send(value){
   const data=JSON.stringify(value);
   if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(data);
@@ -162,11 +171,30 @@ function render(animate){setX(-page*W,animate);flow.style.opacity='1';send({type
 function hasPendingImages(){return startAtEnd&&Array.from(document.images).some(img=>!img.complete)}
 function measure(){
   if(hasPendingImages())return;
-  W=innerWidth;
+  W=vw();
   pages=Math.max(1,Math.round(flow.scrollWidth/W));
   page=startAtEnd?pages-1:Math.max(0,Math.min(pages-1,Math.max(0,initialPage)));
   render(false);
 }
+// 字号/主题注入后重排：宽度可能变了要重算 pages，但保持当前页，不像 measure() 跳回 initialPage。
+function remeasureKeepPage(){
+  W=vw();
+  const old=page;
+  pages=Math.max(1,Math.round(flow.scrollWidth/W));
+  page=Math.max(0,Math.min(pages-1,old));
+  render(false);
+}
+function applyStyle(cmd){
+  const r=document.documentElement.style;
+  if(cmd.fs)r.setProperty('--fs',cmd.fs+'px');
+  const c=cmd.colors;
+  if(c){r.setProperty('--bg',c.bg);r.setProperty('--ink',c.ink);r.setProperty('--accent',c.accent);r.setProperty('--soft',c.soft);r.setProperty('--line',c.line);r.setProperty('--chrome',c.chrome);}
+  remeasureKeepPage();
+}
+// 统一命令入口：native 经 injectJavaScript 调 window.__readerCmd；web sandbox iframe 用 postMessage。
+function handleCmd(cmd){if(cmd&&cmd.type==='style')applyStyle(cmd);}
+window.__readerCmd=handleCmd;
+addEventListener('message',function(e){var c=e.data&&e.data.__yamiboReaderCmd;if(c)handleCmd(c);});
 function go(dir){
   if(dir>0&&page>=pages-1){send({type:'nextChapter'});return}
   if(dir<0&&page<=0){send({type:'prevChapter'});return}
@@ -204,7 +232,10 @@ document.getElementById('comments').addEventListener('click',()=>send({type:'com
 document.getElementById('floorlink').addEventListener('click',()=>send({type:'floor'}));
 document.querySelectorAll('[data-image]').forEach(el=>el.addEventListener('click',()=>send({type:'image',src:el.dataset.image})));
 document.querySelectorAll('a[data-link]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();send({type:'link',href:el.href})}));
-document.querySelectorAll('img').forEach(img=>{if(!img.complete){img.addEventListener('load',()=>setTimeout(measure,30),{once:true});img.addEventListener('error',()=>setTimeout(measure,30),{once:true})}});
-addEventListener('resize',measure);addEventListener('load',()=>setTimeout(measure,30));setTimeout(measure,100);setTimeout(measure,800);
+// 多图逐张 load 会触发多次 measure，合并成一个 80ms debounce，避免连环重排。
+let mt;
+function scheduleMeasure(){clearTimeout(mt);mt=setTimeout(measure,80);}
+document.querySelectorAll('img').forEach(img=>{if(!img.complete){img.addEventListener('load',scheduleMeasure,{once:true});img.addEventListener('error',scheduleMeasure,{once:true})}});
+addEventListener('resize',measure);addEventListener('load',scheduleMeasure);setTimeout(measure,100);setTimeout(measure,800);
 </script></body></html>`;
 }

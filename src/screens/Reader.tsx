@@ -6,7 +6,7 @@ import { StackActions } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { StatusBar, Avatar } from '../components/ui';
 import Icon from '../components/Icon';
-import ReaderSurface from '../components/ReaderSurface';
+import ReaderSurface, { type ReaderSurfaceHandle } from '../components/ReaderSurface';
 import { createReaderHtml } from '../readerHtml';
 import { getChapterComments, getReadingStream, resolvePostPage } from '../api';
 import { parseForumLink } from '../forumLinks';
@@ -47,13 +47,12 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const [comments, setComments] = React.useState<ReadingComment[] | null>(null);
   const [commentsLoading, setCommentsLoading] = React.useState(false);
   const [tocReverse, setTocReverse] = React.useState(false);
-  const [sliderPreview, setSliderPreview] = React.useState<number | null>(null);
   const [organize, setOrganize] = React.useState({ read: 0, total: 0 });
   const [updateHint, setUpdateHint] = React.useState<string | null>(null);
   const [lowHint, setLowHint] = React.useState(false);
-  const trackWidth = React.useRef(1);
   const autoUpdateChecked = React.useRef(false);
   const chapterIdxRef = React.useRef(0);
+  const surfaceRef = React.useRef<ReaderSurfaceHandle>(null);
 
   React.useEffect(() => {
     chapterIdxRef.current = chapterIdx;
@@ -275,17 +274,52 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   const chapter = book?.chapters[chapterIdx];
   const pct = book ? Math.max(1, Math.min(100, Math.round(((chapterIdx + (pageIdx + 1) / Math.max(1, pageCount)) / book.chapters.length) * 100))) : 1;
 
+  // 每翻一页都写 AsyncStorage 太频繁：trailing debounce 800ms 只落最后一次，
+  // 卸载时把最新一笔 flush 掉，避免快速翻页后离开丢进度。
+  const pendingProgress = React.useRef<{ tid: string; payload: ReadingProgress } | null>(null);
+  const progressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   React.useEffect(() => {
     if (phase !== 'reading' || !pageReady || !book || !chapter) return;
-    saveReadingProgress(tid, { chapter: chapterIdx, page: pageIdx, pct, chapterTitle: chapter.title, pid: chapter.pid, ts: Date.now() });
+    pendingProgress.current = {
+      tid,
+      payload: { chapter: chapterIdx, page: pageIdx, pct, chapterTitle: chapter.title, pid: chapter.pid, ts: Date.now() },
+    };
+    if (progressTimer.current) clearTimeout(progressTimer.current);
+    progressTimer.current = setTimeout(() => {
+      progressTimer.current = null;
+      const next = pendingProgress.current;
+      if (next) { pendingProgress.current = null; saveReadingProgress(next.tid, next.payload); }
+    }, 800);
   }, [book, chapter, chapterIdx, pageIdx, pageReady, pct, phase, tid]);
+
+  React.useEffect(() => () => {
+    if (progressTimer.current) clearTimeout(progressTimer.current);
+    const next = pendingProgress.current;
+    if (next) { pendingProgress.current = null; saveReadingProgress(next.tid, next.payload); }
+  }, []);
+
+  // 目标章无需联网即可就绪：blocks 已挂在章节上，或该楼层已躺在 pagesRef 页缓存里（整理扫描后
+  // readingIndexToBook 会丢弃 blocks 只回填当前章，但页缓存是满的——ensureChapter 只是无网络重映射）。
+  const chapterReady = React.useCallback((index: number) => {
+    const target = bookRef.current?.chapters[index];
+    if (!target) return false;
+    if (target.blocks) return true;
+    for (const stream of pagesRef.current.values()) {
+      if (stream.posts.some((post) => post.pid === target.pid)) return true;
+    }
+    return false;
+  }, []);
 
   const jumpChapter = React.useCallback(async (index: number, targetPage = 0) => {
     if (!book || index < 0 || index >= book.chapters.length) return;
     setPanel(null);
     setChrome(false);
     setPageReady(false);
-    setPhase('loading');
+    // 目标章免网络就绪时跳过 loading 分支（它会整棵卸载再重建 WebView），让 html memo 变化驱动
+    // 实例原地换文档。仅确需联网拉取时才走 loading。
+    const needsFetch = !chapterReady(index);
+    if (needsFetch) setPhase('loading');
     try {
       await ensureChapter(index);
       setChapterIdx(index);
@@ -298,7 +332,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       nav.toast(e.message || '章节加载失败');
       setPhase('error');
     }
-  }, [book, ensureChapter, nav]);
+  }, [book, chapterReady, ensureChapter, nav]);
 
   const openComments = React.useCallback(async () => {
     if (!chapter) return;
@@ -450,6 +484,8 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
       chapterTitle: chapter.title.replace(/^(?:第\s*\d+\s*[话話]\s*[·:：\-]?\s*)/i, ''),
       chapterType: chapter.type,
       blocks: chapter.blocks,
+      // 字号/主题只做首帧初始值：它们变化时走 surfaceRef 注入更新（见下方 effect），不重生成
+      // HTML，因此故意不进 deps —— 否则整段 HTML 重建会让 WebView reload 白闪。
       theme: themeKey,
       fontSize: READER_FONTS[fontIdx],
       initialPage: sourcePage,
@@ -459,13 +495,22 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
     });
   }, [
     book?.statusText, book?.title, chapter?.blocks, chapter?.no, chapter?.pos,
-    chapter?.title, chapter?.type, chapterCount, chapterIdx, fontIdx, sourcePage, themeKey,
+    chapter?.title, chapter?.type, chapterCount, chapterIdx, sourcePage,
   ]);
+
+  // 字号/主题变化时注入更新（首帧跳过：HTML 已带正确初始值）。文档保持当前页原地重排，不 reload。
+  const styleInjectReady = React.useRef(false);
+  React.useEffect(() => {
+    if (!styleInjectReady.current) { styleInjectReady.current = true; return; }
+    surfaceRef.current?.post({ type: 'style', fs: READER_FONTS[fontIdx], colors: READER_THEMES[themeKey] });
+  }, [fontIdx, themeKey]);
 
   const continueReading = async (restart = false) => {
     const target = restart ? 0 : Math.min((book?.chapters.length || 1) - 1, saved?.chapter || 0);
-    setPhase('loading');
     setPageReady(false);
+    // 与 jumpChapter 同理：目标章免网络就绪时直接进 reading，省掉 loading 中转的一次闪屏。
+    const needsFetch = !chapterReady(target);
+    if (needsFetch) setPhase('loading');
     try {
       await ensureChapter(target);
       setChapterIdx(target);
@@ -522,7 +567,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
   return (
     <View style={{ flex: 1, zIndex: 100, backgroundColor: T.bg }}>
       <View style={{ flex: 1, zIndex: 0 }}>
-        <ReaderSurface html={html} backgroundColor={T.bg} onMessage={onReaderMessage} />
+        <ReaderSurface ref={surfaceRef} html={html} backgroundColor={T.bg} onMessage={onReaderMessage} />
       </View>
       {updateHint && (
         <View pointerEvents="none" style={{ position: 'absolute', top: chrome ? 136 : 58, left: 20, right: 20, alignItems: 'center', zIndex: 60, elevation: 60 }}>
@@ -574,25 +619,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
           <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: T.chrome, borderTopWidth: 1, borderTopColor: T.line, paddingHorizontal: 22, paddingTop: 16, paddingBottom: 22, zIndex: 30, elevation: 30 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <RoundButton icon="back" color={chapterIdx === 0 ? T.soft : T.ink} onPress={() => chapterIdx > 0 && jumpChapter(chapterIdx - 1)} />
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ color: sliderPreview != null ? T.accent : T.soft, fontFamily: FONTS.head, fontSize: 12.5 }}>第 {(sliderPreview ?? chapterIdx) + 1} 话</Text>
-                  <Text style={{ color: T.soft, fontFamily: FONTS.head, fontSize: 12.5 }}>{book.chapters.length === 1 ? '短篇' : `${(sliderPreview ?? chapterIdx) + 1} / ${book.chapters.length}`}</Text>
-                </View>
-                <View
-                  onLayout={(e) => { trackWidth.current = e.nativeEvent.layout.width; }}
-                  onStartShouldSetResponder={() => true}
-                  onMoveShouldSetResponder={() => true}
-                  onResponderGrant={(e) => setSliderPreview(Math.round(Math.max(0, Math.min(1, e.nativeEvent.locationX / trackWidth.current)) * (book.chapters.length - 1)))}
-                  onResponderMove={(e) => setSliderPreview(Math.round(Math.max(0, Math.min(1, e.nativeEvent.locationX / trackWidth.current)) * (book.chapters.length - 1)))}
-                  onResponderRelease={() => { const target = sliderPreview; setSliderPreview(null); if (target != null && target !== chapterIdx) jumpChapter(target); }}
-                  style={{ height: 26, justifyContent: 'center' }}
-                >
-                  <View style={{ height: 3, borderRadius: 2, backgroundColor: T.line }} />
-                  <View style={{ position: 'absolute', left: 0, width: `${book.chapters.length <= 1 ? 100 : ((sliderPreview ?? chapterIdx) / (book.chapters.length - 1)) * 100}%`, height: 3, borderRadius: 2, backgroundColor: T.accent }} />
-                  <View style={{ position: 'absolute', left: `${book.chapters.length <= 1 ? 100 : ((sliderPreview ?? chapterIdx) / (book.chapters.length - 1)) * 100}%`, marginLeft: -9, width: 18, height: 18, borderRadius: 9, backgroundColor: T.accent }} />
-                </View>
-              </View>
+              <ChapterSlider T={T} chapterIdx={chapterIdx} total={book.chapters.length} onJump={jumpChapter} />
               <RoundButton icon="chevRight" color={chapterIdx === book.chapters.length - 1 ? T.soft : T.ink} onPress={() => chapterIdx < book.chapters.length - 1 && jumpChapter(chapterIdx + 1)} />
             </View>
             <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: T.line, marginTop: 10, paddingTop: 6 }}>
@@ -691,11 +718,11 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
           {panel === 'font' && (
             <>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                <StepButton label="A−" disabled={fontIdx === 0} T={T} onPress={() => { const next = Math.max(0, fontIdx - 1); setSourcePage(pageIdx); setFontIdx(next); saveReaderFont(next); }} />
+                <StepButton label="A−" disabled={fontIdx === 0} T={T} onPress={() => { const next = Math.max(0, fontIdx - 1); setFontIdx(next); saveReaderFont(next); }} />
                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6 }}>
-                  {READER_FONTS.map((_, index) => <Pressable key={index} onPress={() => { setSourcePage(pageIdx); setFontIdx(index); saveReaderFont(index); }} style={{ width: index === fontIdx ? 14 : 9, height: index === fontIdx ? 14 : 9, borderRadius: 7, backgroundColor: index <= fontIdx ? T.accent : T.line }} />)}
+                  {READER_FONTS.map((_, index) => <Pressable key={index} onPress={() => { setFontIdx(index); saveReaderFont(index); }} style={{ width: index === fontIdx ? 14 : 9, height: index === fontIdx ? 14 : 9, borderRadius: 7, backgroundColor: index <= fontIdx ? T.accent : T.line }} />)}
                 </View>
-                <StepButton label="A" large disabled={fontIdx === READER_FONTS.length - 1} T={T} onPress={() => { const next = Math.min(READER_FONTS.length - 1, fontIdx + 1); setSourcePage(pageIdx); setFontIdx(next); saveReaderFont(next); }} />
+                <StepButton label="A" large disabled={fontIdx === READER_FONTS.length - 1} T={T} onPress={() => { const next = Math.min(READER_FONTS.length - 1, fontIdx + 1); setFontIdx(next); saveReaderFont(next); }} />
               </View>
               <View style={{ marginTop: 18, padding: 16, borderRadius: 14, backgroundColor: T.bg, borderWidth: 1, borderColor: T.line }}>
                 <Text style={{ color: T.ink, fontFamily: FONTS.body, fontSize: READER_FONTS[fontIdx], lineHeight: READER_FONTS[fontIdx] * 1.95 }}>　　天台的风比楼下要凉一些。她把校服外套往身上拢了拢，正文会按当前字号实时重排。</Text>
@@ -709,7 +736,7 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
                 const item = READER_THEMES[key];
                 const current = key === themeKey;
                 return (
-                  <Pressable key={key} onPress={() => { setSourcePage(pageIdx); setThemeKey(key); saveReaderTheme(key); }} style={{ flex: 1, alignItems: 'center' }}>
+                  <Pressable key={key} onPress={() => { setThemeKey(key); saveReaderTheme(key); }} style={{ flex: 1, alignItems: 'center' }}>
                     <View style={{ width: '100%', height: 64, borderRadius: 14, backgroundColor: item.bg, borderWidth: current ? 2.5 : 1, borderColor: current ? T.accent : item.line, alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ color: item.ink, fontFamily: FONTS.body, fontSize: 19, fontWeight: '600' }}>文</Text>
                     </View>
@@ -782,6 +809,39 @@ function OrganizeState({ T, read, total, onBack }: any) {
     </View>
   );
 }
+
+// 章节滑块拖动时每帧 setState，若留在 ReaderScreen 里会整屏重渲染（含 WebView 外的所有 chrome）。
+// 收成 memo 子组件，preview 只在这里 setState；对外只暴露 onJump，父组件 props 不变即跳过重渲染。
+const ChapterSlider = React.memo(function ChapterSlider({ T, chapterIdx, total, onJump }: {
+  T: (typeof READER_THEMES)[ReaderThemeKey]; chapterIdx: number; total: number; onJump: (index: number) => void;
+}) {
+  const [preview, setPreview] = React.useState<number | null>(null);
+  const trackWidth = React.useRef(1);
+  const value = preview ?? chapterIdx;
+  const fill = total <= 1 ? 100 : (value / (total - 1)) * 100;
+  const at = (x: number) => Math.round(Math.max(0, Math.min(1, x / trackWidth.current)) * (total - 1));
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={{ color: preview != null ? T.accent : T.soft, fontFamily: FONTS.head, fontSize: 12.5 }}>第 {value + 1} 话</Text>
+        <Text style={{ color: T.soft, fontFamily: FONTS.head, fontSize: 12.5 }}>{total === 1 ? '短篇' : `${value + 1} / ${total}`}</Text>
+      </View>
+      <View
+        onLayout={(e) => { trackWidth.current = e.nativeEvent.layout.width; }}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+        onResponderGrant={(e) => setPreview(at(e.nativeEvent.locationX))}
+        onResponderMove={(e) => setPreview(at(e.nativeEvent.locationX))}
+        onResponderRelease={() => { const target = preview; setPreview(null); if (target != null && target !== chapterIdx) onJump(target); }}
+        style={{ height: 26, justifyContent: 'center' }}
+      >
+        <View style={{ height: 3, borderRadius: 2, backgroundColor: T.line }} />
+        <View style={{ position: 'absolute', left: 0, width: `${fill}%`, height: 3, borderRadius: 2, backgroundColor: T.accent }} />
+        <View style={{ position: 'absolute', left: `${fill}%`, marginLeft: -9, width: 18, height: 18, borderRadius: 9, backgroundColor: T.accent }} />
+      </View>
+    </View>
+  );
+});
 
 function RoundButton({ icon, color, onPress }: { icon: string; color: string; onPress: () => void }) {
   return <Pressable hitSlop={8} onPress={onPress} style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', zIndex: 1 }}><Icon name={icon} size={21} color={color} /></Pressable>;
