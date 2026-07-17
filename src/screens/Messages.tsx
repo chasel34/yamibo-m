@@ -17,6 +17,54 @@ const SEGS = {
   dm: { fetch: getPMs },
 };
 
+// 行组件模块级 + memo：seg/paging/refreshing 变化时不再全量重渲染每一行（含头像），
+// 跟随 Thread.tsx 的 FloorRow 风格。props 全部稳定（列表项引用 + useCallback 回调 + 布尔）。
+const ReminderRow = React.memo(function ReminderRow({ r, onPress, showDivider }: { r: Reminder; onPress: () => void; showDivider: boolean }) {
+  const { t } = useTheme();
+  return (
+    <View>
+      <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
+        <View style={{ marginTop: 1 }}><Icon name={r.icon} size={20} color={t.inkSoft} /></View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+            <Text style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{r.who}</Text>
+            {r.unread && <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: t.accent }} />}
+          </View>
+          <Text style={{ fontFamily: FONTS.body, fontSize: 14, color: t.inkSoft, marginBottom: 6, lineHeight: 21.7 }}>{r.text}</Text>
+          <Text style={{ fontFamily: FONTS.head, fontSize: 11.5, color: t.muted, fontWeight: '500' }}>{r.time}</Text>
+        </View>
+      </Pressable>
+      {showDivider && <View style={{ height: 1, backgroundColor: t.line, marginLeft: 56, marginRight: 22 }} />}
+    </View>
+  );
+});
+
+const DmRow = React.memo(function DmRow({ d, onPress, showDivider }: { d: PMItem; onPress: () => void; showDivider: boolean }) {
+  const { t } = useTheme();
+  return (
+    <View>
+      <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
+        <Avatar user={d.user} size={46} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+            <Text numberOfLines={1} style={{ fontFamily: FONTS.head, fontSize: 15, fontWeight: '600', color: t.ink, flex: 1 }}>{d.user.name}</Text>
+            <Text style={{ fontFamily: FONTS.head, fontSize: 11.5, color: t.muted, fontWeight: '500' }}>{d.time}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text numberOfLines={1} style={{ fontFamily: FONTS.body, fontSize: 14, color: t.inkSoft, flex: 1 }}>{d.last}</Text>
+            {d.unread > 0 && (
+              <View style={{ minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: t.onAccent, fontSize: 11, fontWeight: '700', fontFamily: FONTS.head }}>{d.unread}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Pressable>
+      {showDivider && <View style={{ height: 1, backgroundColor: t.line, marginLeft: 78, marginRight: 22 }} />}
+    </View>
+  );
+});
+
 export default function MessagesScreen() {
   const nav = useNav();
   const { t } = useTheme();
@@ -58,6 +106,7 @@ export default function MessagesScreen() {
     if (lists[seg] === null) load(seg, 1, false);
   }, [seg]); // eslint-disable-line
 
+  const onRowPress = React.useCallback(() => nav.notImplemented(), [nav]);
   const reminders = lists.remind?.list || null;
   const dms = lists.dm?.list || null;
   const active = lists[seg];
@@ -95,43 +144,11 @@ export default function MessagesScreen() {
           >
             {seg === 'remind' ? (
               reminders!.length === 0 ? <EmptyState label="还没有提醒" sub="有人找你时会出现在这里" /> : reminders!.map((r, i) => (
-                <View key={r.id}>
-                  <Pressable onPress={nav.notImplemented} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
-                    <View style={{ marginTop: 1 }}><Icon name={r.icon} size={20} color={t.inkSoft} /></View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 5 }}>
-                        <Text style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{r.who}</Text>
-                        {r.unread && <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: t.accent }} />}
-                      </View>
-                      <Text style={{ fontFamily: FONTS.body, fontSize: 14, color: t.inkSoft, marginBottom: 6, lineHeight: 21.7 }}>{r.text}</Text>
-                      <Text style={{ fontFamily: FONTS.head, fontSize: 11.5, color: t.muted, fontWeight: '500' }}>{r.time}</Text>
-                    </View>
-                  </Pressable>
-                  {i < reminders!.length - 1 && <View style={{ height: 1, backgroundColor: t.line, marginLeft: 56, marginRight: 22 }} />}
-                </View>
+                <ReminderRow key={r.id} r={r} onPress={onRowPress} showDivider={i < reminders!.length - 1} />
               ))
             ) : (
               dms!.length === 0 ? <EmptyState label="还没有私信" sub="安安静静，等一朵花开" /> : dms!.map((d, i) => (
-                <View key={d.id}>
-                  <Pressable onPress={nav.notImplemented} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
-                    <Avatar user={d.user} size={46} />
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                        <Text numberOfLines={1} style={{ fontFamily: FONTS.head, fontSize: 15, fontWeight: '600', color: t.ink, flex: 1 }}>{d.user.name}</Text>
-                        <Text style={{ fontFamily: FONTS.head, fontSize: 11.5, color: t.muted, fontWeight: '500' }}>{d.time}</Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text numberOfLines={1} style={{ fontFamily: FONTS.body, fontSize: 14, color: t.inkSoft, flex: 1 }}>{d.last}</Text>
-                        {d.unread > 0 && (
-                          <View style={{ minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center' }}>
-                            <Text style={{ color: t.onAccent, fontSize: 11, fontWeight: '700', fontFamily: FONTS.head }}>{d.unread}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  </Pressable>
-                  {i < dms!.length - 1 && <View style={{ height: 1, backgroundColor: t.line, marginLeft: 78, marginRight: 22 }} />}
-                </View>
+                <DmRow key={d.id} d={d} onPress={onRowPress} showDivider={i < dms!.length - 1} />
               ))
             )}
             {active ? (

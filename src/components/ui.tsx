@@ -171,7 +171,7 @@ export interface FeedThread {
   pinned?: boolean;
   boardName?: string;
 }
-export function FeedItem({ t: th, onOpen, showBoard = false }: { t: FeedThread; onOpen: (t: FeedThread) => void; showBoard?: boolean }) {
+export const FeedItem = React.memo(function FeedItem({ t: th, onOpen, showBoard = false }: { t: FeedThread; onOpen: (t: FeedThread) => void; showBoard?: boolean }) {
   const { t } = useTheme();
   return (
     <Pressable onPress={() => onOpen(th)} style={{ paddingVertical: 16, paddingHorizontal: 22 }}>
@@ -185,7 +185,7 @@ export function FeedItem({ t: th, onOpen, showBoard = false }: { t: FeedThread; 
       <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted, fontWeight: '500' }}>{th.time}</Text>
     </Pressable>
   );
-}
+});
 
 // ===================== Board icon (line icons, per design app/data.jsx) =====================
 // 真实板块不带设计稿里的 icon 名，按板块名关键字映射到同一套描边图标。顺序敏感：

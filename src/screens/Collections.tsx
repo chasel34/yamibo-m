@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, RefreshControl } from 'react-native';
 import Screen from '../components/Screen';
 import { NavHeader, FeedItem, Divider, Pager } from '../components/ui';
+import type { FeedThread } from '../components/ui';
 import { Loader, ErrorView, EmptyState } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
@@ -45,6 +46,8 @@ export default function CollectionsScreen() {
     load(targetPage, false);
   }, [data, load, paging]);
 
+  const openThread = React.useCallback((x: FeedThread) => nav.push('thread', { thread: x }), [nav]);
+
   return (
     <Screen>
       <NavHeader title="我的收藏" onBack={nav.pop} />
@@ -59,7 +62,7 @@ export default function CollectionsScreen() {
           >
             {data.list.map((th, i) => (
               <View key={th.id}>
-                <FeedItem t={th} onOpen={(x) => nav.push('thread', { thread: x })} />
+                <FeedItem t={th} onOpen={openThread} />
                 {i < data.list.length - 1 && <Divider />}
               </View>
             ))}
