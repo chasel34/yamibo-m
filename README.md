@@ -37,8 +37,14 @@ npm install
 npm run proxy      # 终端 1：本地 CORS + Cookie 代理（:8089）
 npm run web        # 终端 2：浏览器 375×812 设备视口（:8085）
 
-# Android（原生直连论坛，无需代理）：
-npm run android    # 需 Android SDK 或 Expo Go
+# Android dev build（原生直连论坛，无需代理）：
+npm run build:dev
+npm run android    # 安装 dev build 后，扫码或手动输入 URL 连接 Metro
+
+# Dev build 使用独立包名 com.yamibo.reader.dev 和蓝色图标，可与正式版同时安装。
+
+# 如需临时用 Expo Go 验证非原生模块页面：
+npm run android:go
 ```
 
 > Web 端需要代理，是因为浏览器有跨域（CORS）限制且禁止脚本设置 `Cookie` 头；

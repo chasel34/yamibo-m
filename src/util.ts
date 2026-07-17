@@ -68,11 +68,8 @@ const SMILEY_CODE_RE = /\{:[\w]+_\d+:\}/g;
 // ---- strip tags → plain text (keeps line breaks) ----
 function stripHtmlText(html?: string | null, trim = true): string {
   if (!html) return '';
+  // sanitizeHtml 已移除 <style>/<script> 与 display:none/jammer 块，无需在此用同样的正则重复扫描一遍。
   let s = sanitizeHtml(String(html))
-    // Drop <style>/<script> blocks entirely — their inner CSS/JS text must not
-    // leak into the body (e.g. Discuz 折叠/showcollapse injects a <style> block).
-    .replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
-    .replace(/<(?:span|font)\b[^>]*(?:display\s*:\s*none|class\s*=\s*["']jammer["'])[^>]*>[\s\S]*?<\/(?:span|font)>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
     .replace(/<\/div>/gi, '\n')
@@ -129,17 +126,53 @@ function sanitizeHtml(html: string): string {
     .replace(/<(?:span|font)\b[^>]*(?:display\s*:\s*none|class\s*=\s*["']jammer["'])[^>]*>[\s\S]*?<\/(?:span|font)>/gi, '');
 }
 
-function attr(tag: string, name: string): string {
-  return decodeEntities((tag.match(new RegExp(`\\b${name}=["']([^"']+)["']`, 'i')) || [])[1] || '');
+// 属性名取自固定的有限集合，按名缓存正则，避免每个 tag 约 6 次调用都 new RegExp。
+// 正则无 g flag，match 不会读写 lastIndex，可跨调用安全复用同一对象。
+const ATTR_RE_CACHE = new Map<string, RegExp>();
+function attrRe(name: string): RegExp {
+  let re = ATTR_RE_CACHE.get(name);
+  if (!re) {
+    re = new RegExp(`\\b${name}=["']([^"']+)["']`, 'i');
+    ATTR_RE_CACHE.set(name, re);
+  }
+  return re;
 }
 
-function imgUrlFromTag(tag: string): string | null {
+function attr(tag: string, name: string): string {
+  return decodeEntities((tag.match(attrRe(name)) || [])[1] || '');
+}
+
+function positiveInt(value?: string | number | null): number | undefined {
+  const n = parseInt(String(value || ''), 10);
+  return n > 0 ? n : undefined;
+}
+
+function positiveIntAttr(tag: string, name: string): number | undefined {
+  return positiveInt(attr(tag, name));
+}
+
+function imgFromTag(tag: string): { src: string | null; width?: number; height?: number } {
   // Discuz lazy-loads big images via file="..."; src may be a placeholder.
   const file = attr(tag, 'file');
   const src = attr(tag, 'src');
   let url = file || src;
   if (file && src && SMILEY_RE.test(src) && !SMILEY_RE.test(file)) url = file;
-  return url ? absUrl(url) : null;
+  return {
+    src: url ? absUrl(url) : null,
+    width: positiveIntAttr(tag, 'width'),
+    height: positiveIntAttr(tag, 'height'),
+  };
+}
+
+function imgUrlFromTag(tag: string): string | null {
+  return imgFromTag(tag).src;
+}
+
+function imageSizeFromAttachment(att?: Attachment | null): { width?: number; height?: number } {
+  return {
+    width: positiveInt(att?.width),
+    height: positiveInt(att?.height),
+  };
 }
 
 function isImageAttachment(att?: Attachment | null): boolean {
@@ -265,8 +298,10 @@ function richRunsFromHtml(html: string, baseStyle: Omit<RichTextRun, 'v'> = {}):
   return runs;
 }
 
-function hasRichMarkup(html: string): boolean {
-  return /<(?:strong|b|font|span|a)\b/i.test(sanitizeHtml(html)) || /https?:\/\//i.test(stripHtml(html));
+// stripped 可选：调用方若已算过 stripHtml(html) 可传入复用，避免重复 strip；不传则按原行为自算。
+function hasRichMarkup(html: string, stripped?: string): boolean {
+  const text = stripped ?? stripHtml(html);
+  return /<(?:strong|b|font|span|a)\b/i.test(sanitizeHtml(html)) || /https?:\/\//i.test(text);
 }
 
 function richTextFromHtml(html: string): string {
@@ -325,7 +360,9 @@ export function parseMessage(
     blocks.push({ t: 'notice', kind, v });
   };
   const pushText = (chunk: string) => {
-    let v = stripHtml(chunk);
+    // 只 strip 一次；stripped 保留未经隐藏内容改写的原文，供 hasRichMarkup 复用，避免二次 strip。
+    const stripped = stripHtml(chunk);
+    let v = stripped;
     if (!v) return;
     if (/本帖隐藏的内容|隐藏内容|回复可见|回覆可见|需要回复/i.test(v)) {
       pushNotice('hidden', '这里有回复可见或权限限制内容，移动 API 暂时无法直接展开。');
@@ -340,7 +377,7 @@ export function parseMessage(
       pushNotice('collapse', '下方内容来自折叠区域，已按普通正文显示。');
       pushedCollapseNotice = true;
     }
-    if (hasRichMarkup(chunk)) {
+    if (hasRichMarkup(chunk, stripped)) {
       const runs = richRunsFromHtml(chunk);
       if (runs.length === 1 && !runs[0].href && !runs[0].bold && !runs[0].tone && !runs[0].size) {
         blocks.push({ t: 'text', v: runs[0].v });
@@ -386,16 +423,16 @@ export function parseMessage(
       const href = decodeEntities((tag.match(/\bhref=["']([^"']+)["']/i) || [])[1] || '');
       const safeHref = absUrl(href);
       const v = stripHtml(tag) || href;
-      const src = imgUrlFromTag(tag);
-      if (src && !SMILEY_RE.test(src)) blocks.push({ t: 'img', src, cap: v && v !== href ? v : '图片' });
+      const img = imgFromTag(tag);
+      if (img.src && !SMILEY_RE.test(img.src)) blocks.push({ t: 'img', src: img.src, cap: v && v !== href ? v : '图片', width: img.width, height: img.height });
       else if (safeHref && hasRichMarkup(tag.replace(/^<a\b[^>]*>|<\/a>$/gi, ''))) {
         const runs = richRunsFromHtml(tag.replace(/^<a\b[^>]*>|<\/a>$/gi, ''), { href: safeHref });
         if (runs.length) blocks.push({ t: 'rich', runs });
       } else if (safeHref) blocks.push({ t: 'link', v, href: safeHref });
       else pushText(tag);
     } else {
-      const src = imgUrlFromTag(tag);
-      if (src && !SMILEY_RE.test(src)) blocks.push({ t: 'img', src, cap: '图片' });
+      const img = imgFromTag(tag);
+      if (img.src && !SMILEY_RE.test(img.src)) blocks.push({ t: 'img', src: img.src, cap: '图片', width: img.width, height: img.height });
     }
     last = re.lastIndex;
   }
@@ -403,6 +440,27 @@ export function parseMessage(
 
   // Append attachments that weren't embedded inline above.
   if (attachments) {
+    const imageAttachments = Object.keys(attachments)
+      .map((aid) => {
+        const a = attachments[aid];
+        if (!isImageAttachment(a)) return null;
+        return {
+          path: a.attachment || '',
+          url: attachmentUrl(a),
+          ...imageSizeFromAttachment(a),
+        };
+      })
+      .filter((item): item is { path: string; url: string | null; width?: number; height?: number } => !!item && (!!item.width || !!item.height));
+    blocks.forEach((block) => {
+      if (block.t !== 'img' || (block.width && block.height)) return;
+      const match = imageAttachments.find((item) => {
+        const src = block.src || '';
+        return src !== '' && (src === item.url || (item.path !== '' && src.indexOf(item.path) >= 0));
+      });
+      if (!match) return;
+      block.width = block.width || match.width;
+      block.height = block.height || match.height;
+    });
     const shown = blocks.filter((b) => b.t === 'img').map((b) => b.src || '');
     const order = (Array.isArray(imagelist) && imagelist.length) ? imagelist : Object.keys(attachments);
     const appended = new Set<string>();
@@ -426,8 +484,7 @@ export function parseMessage(
         t: 'img',
         src: url,
         cap: a.description || a.imgalt || a.filename || '图片',
-        width: parseInt(a.width || '0', 10) || undefined,
-        height: parseInt(a.height || '0', 10) || undefined,
+        ...imageSizeFromAttachment(a),
       });
     });
     Object.keys(attachments).forEach((aid) => {
@@ -442,8 +499,7 @@ export function parseMessage(
           t: 'img',
           src: url,
           cap: a.description || a.imgalt || a.filename || '图片',
-          width: parseInt(a.width || '0', 10) || undefined,
-          height: parseInt(a.height || '0', 10) || undefined,
+          ...imageSizeFromAttachment(a),
         });
         return;
       }

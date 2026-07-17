@@ -3,6 +3,7 @@ import { View, Text, Pressable, ScrollView, RefreshControl } from 'react-native'
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
 import { NavHeader, NavBack, FeedItem, SubBoardChip, PinnedRow, Kicker, Divider, HLine, Pager } from '../components/ui';
+import type { FeedThread } from '../components/ui';
 import { Loader, ErrorView, EmptyState } from '../components/states';
 import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
@@ -83,6 +84,7 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
   };
 
   const openSub = (s: BoardSub) => nav.push('board', { board: { fid: s.fid, name: s.name } });
+  const openThread = React.useCallback((x: FeedThread) => nav.push('thread', { thread: x, board }), [nav, board]);
 
   return (
     <Screen>
@@ -157,7 +159,7 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
                 <EmptyState label={sort === '精华' ? '这个分类下还没有精华帖' : '这里还没有帖子'} sub="换个分类看看吧" />
               ) : items.map((th, i) => (
                 <View key={th.id}>
-                  <FeedItem t={th} onOpen={(x) => nav.push('thread', { thread: x, board })} />
+                  <FeedItem t={th} onOpen={openThread} />
                   {i < items.length - 1 && <Divider />}
                 </View>
               ))}
