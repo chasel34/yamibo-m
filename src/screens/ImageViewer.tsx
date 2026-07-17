@@ -1,5 +1,5 @@
 import React from 'react';
-import { Animated, Pressable, ScrollView, Text, View } from 'react-native';
+import { Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Icon from '../components/Icon';
 import { StatusBar } from '../components/ui';
@@ -21,6 +21,36 @@ const ANIM = { duration: 300, useNativeDriver: true } as const;
 // open. WINDOW ⊇ the pager's pre-mounted ±1 and prefetchAround's ±2, so a normal swipe
 // always lands on an already-loaded page (no flash-of-placeholder on a single turn).
 const WINDOW = 2;
+
+// 单页包装：memo 让翻页时只有进出预挂载窗口/active 翻转的页重渲染，其余页（含远页的
+// 空占位）整棵跳过——否则每次吸附 setI 都会重建全部 N 页子树，大图集在低端机上掉帧。
+const PagerPage = React.memo(function PagerPage({ item, active, mounted, W, H, onZoomChange, onToggleChrome, onEdgeTap, onDismiss }: {
+  item: ImagePagerItem;
+  active: boolean;
+  mounted: boolean;
+  W: number;
+  H: number;
+  onZoomChange: (zoomed: boolean) => void;
+  onToggleChrome: () => void;
+  onEdgeTap: (dir: -1 | 1) => void;
+  onDismiss: () => void;
+}) {
+  // Distant pages render an empty spacer instead of a loading ZoomableImage, so a
+  // large gallery doesn't fire N high-priority image decodes the moment it opens.
+  if (!mounted) return <View style={{ width: W, height: H }} />;
+  return (
+    <ZoomableImage
+      item={item}
+      active={active}
+      W={W}
+      H={H}
+      onZoomChange={onZoomChange}
+      onToggleChrome={onToggleChrome}
+      onEdgeTap={onEdgeTap}
+      onDismiss={onDismiss}
+    />
+  );
+});
 
 // —— 底部进度滑块（复刻 reader 的 slider，按页定位） ——
 function PageSlider({ i, n, onJump }: { i: number; n: number; onJump: (k: number) => void }) {
@@ -130,23 +160,19 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
     setVp({ W: width, H: height });
   };
 
-  const renderPage = React.useCallback((item: ImagePagerItem, k: number) => {
-    // Distant pages render an empty spacer instead of a loading ZoomableImage, so a
-    // large gallery doesn't fire N high-priority image decodes the moment it opens.
-    if (Math.abs(k - i) > WINDOW) return <View style={{ width: W, height: H }} />;
-    return (
-      <ZoomableImage
-        item={item}
-        active={k === i}
-        W={W}
-        H={H}
-        onZoomChange={setZoomed}
-        onToggleChrome={toggleChrome}
-        onEdgeTap={onEdgeTap}
-        onDismiss={onDismiss}
-      />
-    );
-  }, [i, W, H, toggleChrome, onEdgeTap, onDismiss]);
+  const renderPage = React.useCallback((item: ImagePagerItem, k: number) => (
+    <PagerPage
+      item={item}
+      active={k === i}
+      mounted={Math.abs(k - i) <= WINDOW}
+      W={W}
+      H={H}
+      onZoomChange={setZoomed}
+      onToggleChrome={toggleChrome}
+      onEdgeTap={onEdgeTap}
+      onDismiss={onDismiss}
+    />
+  ), [i, W, H, toggleChrome, onEdgeTap, onDismiss]);
 
   const topTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] });
   const botTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] });
@@ -210,23 +236,31 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
               <Text style={{ color: T.ink, fontFamily: FONTS.head, fontSize: 16, fontWeight: '700' }}>目录 · 共 {n} 页</Text>
               <Pressable onPress={() => setPanel(null)} style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}><Icon name="close" size={18} color={T.soft} /></Pressable>
             </View>
-            <ScrollView style={{ marginHorizontal: -4 }}>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 4, paddingBottom: 6 }}>
-                {images.map((item, k) => {
-                  const cur = k === i;
-                  return (
-                    <View key={`${k}:${item.src ?? ''}`} style={{ width: '33.333%', paddingHorizontal: 6, marginBottom: 12 }}>
-                      <Pressable onPress={() => { jump(k); setPanel(null); }}>
-                        <View style={{ aspectRatio: 0.7, borderRadius: 9, overflow: 'hidden', borderWidth: cur ? 2.5 : 1, borderColor: cur ? T.accent : T.line }}>
-                          <ViewerImage item={item} />
-                        </View>
-                        <Text style={{ textAlign: 'center', marginTop: 5, fontFamily: FONTS.head, fontSize: 11.5, fontWeight: cur ? '700' : '500', color: cur ? T.accent : T.soft, fontVariant: ['tabular-nums'] }}>{cur ? '当前' : k + 1}</Text>
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </View>
-            </ScrollView>
+            {/* 虚拟化网格：目录一开只挂载视口附近的缩略图，避免大图集一次性拉取/解码全部原图 */}
+            <FlatList
+              data={images}
+              numColumns={3}
+              keyExtractor={(item, k) => `${k}:${item.src ?? ''}`}
+              style={{ marginHorizontal: -4 }}
+              contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: 6 }}
+              initialNumToRender={12}
+              maxToRenderPerBatch={9}
+              windowSize={5}
+              extraData={i}
+              renderItem={({ item, index: k }) => {
+                const cur = k === i;
+                return (
+                  <View style={{ width: '33.333%', paddingHorizontal: 6, marginBottom: 12 }}>
+                    <Pressable onPress={() => { jump(k); setPanel(null); }}>
+                      <View style={{ aspectRatio: 0.7, borderRadius: 9, overflow: 'hidden', borderWidth: cur ? 2.5 : 1, borderColor: cur ? T.accent : T.line }}>
+                        <ViewerImage item={item} />
+                      </View>
+                      <Text style={{ textAlign: 'center', marginTop: 5, fontFamily: FONTS.head, fontSize: 11.5, fontWeight: cur ? '700' : '500', color: cur ? T.accent : T.soft, fontVariant: ['tabular-nums'] }}>{cur ? '当前' : k + 1}</Text>
+                    </Pressable>
+                  </View>
+                );
+              }}
+            />
           </View>
         </View>
       )}
