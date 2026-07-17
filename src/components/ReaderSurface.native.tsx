@@ -31,6 +31,10 @@ const ReaderSurface = React.forwardRef<ReaderSurfaceHandle, ReaderSurfaceProps>(
         overScrollMode="never"
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
+        // WebView 渲染进程被系统回收（安卓低内存/iOS 后台）时自动重载 shell；
+        // shell 重新发 ready，Reader 侧会按 targetRef 重建窗口，阅读位置不丢。
+        onRenderProcessGone={() => webViewRef.current?.reload()}
+        onContentProcessDidTerminate={() => webViewRef.current?.reload()}
         style={{ flex: 1, backgroundColor }}
       />
     );
