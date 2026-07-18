@@ -418,7 +418,7 @@ function UpdateReadyBanner({ open, onLater, onRestart }: { open: boolean; onLate
   const { t } = useTheme();
   if (!open) return null;
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 52, paddingHorizontal: 14, paddingBottom: 26 }}>
+    <View style={{ pointerEvents: 'box-none', position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 52, paddingHorizontal: 14, paddingBottom: 26 }}>
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: t.card,
         borderWidth: 1, borderColor: t.line, borderRadius: 18, paddingVertical: 13,

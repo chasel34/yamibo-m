@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Platform, StatusBar as NativeStatusBar } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -169,14 +170,17 @@ export default function App() {
   if (!ready) return <View style={{ flex: 1, backgroundColor: THEMES[theme].bg }} />;
 
   return (
-    <SafeAreaProvider>
-      <ThemeContext.Provider value={themeValue}>
-        <ToastProvider>
-          <AuthContext.Provider value={auth}>
-            <Shell />
-          </AuthContext.Provider>
-        </ToastProvider>
-      </ThemeContext.Provider>
-    </SafeAreaProvider>
+    // GestureHandlerRootView：图片查看器的 RNGH GestureDetector 必须在其内；web 上等价普通 View。
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <ThemeContext.Provider value={themeValue}>
+          <ToastProvider>
+            <AuthContext.Provider value={auth}>
+              <Shell />
+            </AuthContext.Provider>
+          </ToastProvider>
+        </ThemeContext.Provider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -1,0 +1,187 @@
+diff --git a/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/Gallery.js b/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/Gallery.js
+index 2556625..2d2f9cb 100644
+--- a/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/Gallery.js
++++ b/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/Gallery.js
+@@ -148,14 +148,30 @@ const Gallery = props => {
+   }, [scale]);
+ 
+   // Reference handling
+-  function setIndex(index) {
++  function setIndex(index, animate = false) {
+     const clampedIndex = clamp(index, 0, data.length - 1);
+-    activeIndex.value = clampedIndex;
+-    scroll.value = getScrollPosition({
++    const toScroll = getScrollPosition({
+       index: clampedIndex,
+       itemSize: itemSize.value,
+       gap
+     });
++    if (animate) {
++      // Mirror the swipe path: defer activeIndex (windowing + onIndexChange JS work)
++      // to the end of the animation so no re-render/mount happens mid-flight.
++      scroll.value = withTiming(toScroll, snapTimingConfig, finished => {
++        'worklet';
++
++        if (finished) {
++          activeIndex.value = clampedIndex;
++          scale.value = 1;
++          translate.x.value = 0;
++          translate.y.value = 0;
++        }
++      });
++      return;
++    }
++    activeIndex.value = clampedIndex;
++    scroll.value = toScroll;
+     scale.value = 0;
+     translate.x.value = 0;
+     translate.y.value = 0;
+diff --git a/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/GalleryGestureHandler.js b/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/GalleryGestureHandler.js
+index 3bbf4a4..5c074a8 100644
+--- a/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/GalleryGestureHandler.js
++++ b/node_modules/react-native-zoom-toolkit/lib/module/components/gallery/GalleryGestureHandler.js
+@@ -100,7 +100,7 @@ const GalleryGestureHandler = ({
+ 
+   // This funcions controls the snapping of the gallery's items when panning
+   // For instance if you slowly pan and let go the item
+-  const snapToScrollPosition = () => {
++  const snapToScrollPosition = (velocity = 0) => {
+     'worklet';
+ 
+     cancelAnimation(scroll);
+@@ -120,8 +120,14 @@ const GalleryGestureHandler = ({
+       gap
+     });
+ 
+-    // Gesture velocity can be used as a second parameter but 0 is fine
+-    const toScroll = snapPoint(scroll.value, 0, [prev, current, next]);
++    // Reader-style paging: a fling along the drag direction advances one page even
++    // without crossing the midpoint; slow drags snap by projected position. The
++    // scroll-displacement guard keeps zoomed-in pans (scroll untouched) from paging.
++    const FLING_VELOCITY = 400;
++    let toScroll;
++    if (velocity >= FLING_VELOCITY && scroll.value > current) toScroll = next;
++    else if (velocity <= -1 * FLING_VELOCITY && scroll.value < current) toScroll = prev;
++    else toScroll = snapPoint(scroll.value, velocity, [prev, current, next]);
+     scroll.value = withTiming(toScroll, snapTimingConfig, finished => {
+       if (!finished) return;
+       if (toScroll !== current) {
+@@ -307,7 +313,8 @@ const GalleryGestureHandler = ({
+       scheduleOnRN(onPanEnd, e);
+     }
+     if (snapV || snapH) {
+-      snapToScrollPosition();
++      // scroll 与手指位移反向；rtl 时再反一次（与 onUpdate 的 scrollX 推导一致）
++      snapToScrollPosition(vertical ? -1 * e.velocityY : -1 * horizontalScrollDirection * e.velocityX);
+     }
+     const configX = {
+       velocity: e.velocityX,
+diff --git a/node_modules/react-native-zoom-toolkit/lib/typescript/src/components/gallery/types.d.ts b/node_modules/react-native-zoom-toolkit/lib/typescript/src/components/gallery/types.d.ts
+index 8af0c55..8da2a57 100644
+--- a/node_modules/react-native-zoom-toolkit/lib/typescript/src/components/gallery/types.d.ts
++++ b/node_modules/react-native-zoom-toolkit/lib/typescript/src/components/gallery/types.d.ts
+@@ -45,7 +45,7 @@ export type GalleryProps<T = unknown> = {
+     onGestureEnd: () => void;
+ }> & PinchGestureCallbacks & PanGestureCallbacks & ZoomEventCallbacks & Omit<TapGestureCallbacks, 'onTap'>;
+ export interface GalleryRefType {
+-    setIndex: (index: number) => void;
++    setIndex: (index: number, animate?: boolean) => void;
+     reset: (animate: boolean | undefined) => void;
+     getState: () => CommonZoomState<number>;
+ }
+diff --git a/node_modules/react-native-zoom-toolkit/src/components/gallery/Gallery.tsx b/node_modules/react-native-zoom-toolkit/src/components/gallery/Gallery.tsx
+index c1298c4..128b84f 100644
+--- a/node_modules/react-native-zoom-toolkit/src/components/gallery/Gallery.tsx
++++ b/node_modules/react-native-zoom-toolkit/src/components/gallery/Gallery.tsx
+@@ -188,16 +188,32 @@ const Gallery = <T,>(props: GalleryPropsWithRef<T>) => {
+   );
+ 
+   // Reference handling
+-  function setIndex(index: number) {
++  function setIndex(index: number, animate = false) {
+     const clampedIndex = clamp(index, 0, data.length - 1);
+-    activeIndex.value = clampedIndex;
+-
+-    scroll.value = getScrollPosition({
++    const toScroll = getScrollPosition({
+       index: clampedIndex,
+       itemSize: itemSize.value,
+       gap,
+     });
+ 
++    if (animate) {
++      // Mirror the swipe path: defer activeIndex (windowing + onIndexChange JS work)
++      // to the end of the animation so no re-render/mount happens mid-flight.
++      scroll.value = withTiming(toScroll, snapTimingConfig, (finished) => {
++        'worklet';
++
++        if (finished) {
++          activeIndex.value = clampedIndex;
++          scale.value = 1;
++          translate.x.value = 0;
++          translate.y.value = 0;
++        }
++      });
++      return;
++    }
++
++    activeIndex.value = clampedIndex;
++    scroll.value = toScroll;
+     scale.value = 0;
+     translate.x.value = 0;
+     translate.y.value = 0;
+diff --git a/node_modules/react-native-zoom-toolkit/src/components/gallery/GalleryGestureHandler.tsx b/node_modules/react-native-zoom-toolkit/src/components/gallery/GalleryGestureHandler.tsx
+index cd4b7bd..98fb887 100644
+--- a/node_modules/react-native-zoom-toolkit/src/components/gallery/GalleryGestureHandler.tsx
++++ b/node_modules/react-native-zoom-toolkit/src/components/gallery/GalleryGestureHandler.tsx
+@@ -149,7 +149,7 @@ const GalleryGestureHandler = ({
+ 
+   // This funcions controls the snapping of the gallery's items when panning
+   // For instance if you slowly pan and let go the item
+-  const snapToScrollPosition = () => {
++  const snapToScrollPosition = (velocity: number = 0) => {
+     'worklet';
+ 
+     cancelAnimation(scroll);
+@@ -170,8 +170,14 @@ const GalleryGestureHandler = ({
+       gap,
+     });
+ 
+-    // Gesture velocity can be used as a second parameter but 0 is fine
+-    const toScroll = snapPoint(scroll.value, 0, [prev, current, next]);
++    // Reader-style paging: a fling along the drag direction advances one page even
++    // without crossing the midpoint; slow drags snap by projected position. The
++    // scroll-displacement guard keeps zoomed-in pans (scroll untouched) from paging.
++    const FLING_VELOCITY = 400;
++    let toScroll;
++    if (velocity >= FLING_VELOCITY && scroll.value > current) toScroll = next;
++    else if (velocity <= -1 * FLING_VELOCITY && scroll.value < current) toScroll = prev;
++    else toScroll = snapPoint(scroll.value, velocity, [prev, current, next]);
+ 
+     scroll.value = withTiming(toScroll, snapTimingConfig, (finished) => {
+       if (!finished) return;
+@@ -414,7 +420,10 @@ const GalleryGestureHandler = ({
+       }
+ 
+       if (snapV || snapH) {
+-        snapToScrollPosition();
++        // scroll 与手指位移反向；rtl 时再反一次（与 onUpdate 的 scrollX 推导一致）
++        snapToScrollPosition(
++          vertical ? -1 * e.velocityY : -1 * horizontalScrollDirection * e.velocityX
++        );
+       }
+ 
+       const configX = { velocity: e.velocityX, clamp: [-bounds.x, bounds.x] };
+diff --git a/node_modules/react-native-zoom-toolkit/src/components/gallery/types.ts b/node_modules/react-native-zoom-toolkit/src/components/gallery/types.ts
+index de0b0ca..cdfd7e9 100644
+--- a/node_modules/react-native-zoom-toolkit/src/components/gallery/types.ts
++++ b/node_modules/react-native-zoom-toolkit/src/components/gallery/types.ts
+@@ -69,7 +69,7 @@ export type GalleryProps<T = unknown> = {
+   Omit<TapGestureCallbacks, 'onTap'>;
+ 
+ export interface GalleryRefType {
+-  setIndex: (index: number) => void;
++  setIndex: (index: number, animate?: boolean) => void;
+   reset: (animate: boolean | undefined) => void;
+   getState: () => CommonZoomState<number>;
+ }

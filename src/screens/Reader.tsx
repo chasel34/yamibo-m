@@ -692,20 +692,20 @@ export default function ReaderScreen({ route, navigation }: NativeStackScreenPro
         </View>
       )}
       {updateHint && (
-        <View pointerEvents="none" style={{ position: 'absolute', top: chrome ? 136 : 58, left: 20, right: 20, alignItems: 'center', zIndex: 60, elevation: 60 }}>
+        <View style={{ pointerEvents: 'none', position: 'absolute', top: chrome ? 136 : 58, left: 20, right: 20, alignItems: 'center', zIndex: 60, elevation: 60 }}>
           <View style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, backgroundColor: T.chrome, borderWidth: 1, borderColor: T.line }}>
             <Text style={{ color: T.ink, fontFamily: FONTS.head, fontSize: 12.5, fontWeight: '600' }}>{updateHint}</Text>
           </View>
         </View>
       )}
       {!chrome && pageReady && (
-        <View pointerEvents="none" style={{ position: 'absolute', left: 27, right: 27, bottom: 14, flexDirection: 'row', justifyContent: 'space-between' }}>
+        <View style={{ pointerEvents: 'none', position: 'absolute', left: 27, right: 27, bottom: 14, flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text numberOfLines={1} style={{ maxWidth: '60%', color: T.soft, fontFamily: FONTS.head, fontSize: 11.5 }}>{chapter.title}</Text>
           <Text style={{ color: T.soft, fontFamily: FONTS.head, fontSize: 11.5, fontVariant: ['tabular-nums'] }}>{pageIdx + 1}/{pageCount} · {pct}%</Text>
         </View>
       )}
       {hint && !chrome && (
-        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: '20%', height: '60%', flexDirection: 'row' }}>
+        <View style={{ pointerEvents: 'none', position: 'absolute', left: 0, right: 0, top: '20%', height: '60%', flexDirection: 'row' }}>
           {['上一页', '唤出菜单', '下一页'].map((label, index) => (
             <View key={label} style={{ flex: index === 1 ? 1.18 : 1, backgroundColor: index === 1 ? 'rgba(20,14,11,.42)' : 'rgba(20,14,11,.30)', alignItems: 'center', justifyContent: 'center', gap: 8, borderLeftWidth: index ? 1 : 0, borderLeftColor: 'rgba(255,255,255,.15)' }}>
               <Icon name={index === 1 ? 'forum' : index ? 'chevRight' : 'back'} size={22} color="#fff" />

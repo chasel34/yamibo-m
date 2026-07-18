@@ -20,6 +20,12 @@ EAS Update、构建通道、OTA 发布与验证流程见 @docs/EAS_UPDATE.md。
 
 本机 Metro 改文件后 reload 常拿到旧 bundle。改完代码要**重启 `expo start`** 再验证，否则看到的是旧行为。
 
+## 图片阅读器（native 手势栈）与 patches/
+
+- native 阅读器 = react-native-zoom-toolkit `Gallery`（UI 线程 worklet 手势），入口 `src/components/ViewerGallery.tsx` 平台分发；web 走 FlatList + PanResponder（`ZoomableImage`）兜底，仅供验证、手感不评判。
+- `patches/`（patch-package，`postinstall` 自动应用）修改了 zoom-toolkit：① `setIndex(index, animate?)` 增加动画翻页——**animate 路径的 `activeIndex` 必须留在动画完成回调里更新**，提前更新会让窗口挂载/JS 撞上动画首帧（实测掉帧，勿"简化"回去）；② 松手吸附按拖动方向速度翻页（fling ≥400 且 scroll 有位移才翻，防放大态误翻）。克隆后必须 `npm install` 触发 postinstall，否则运行时行为不对。
+- 版本钉死：zoom-toolkit `5.1.0`、reanimated `4.3.1`（Expo 锁）——zoom-toolkit ≤5.1.0 遇 reanimated 4.5+ 会捏合崩溃（上游 #126）。升级任何一个都要先重做 patch 并回归手势。
+
 ## TypeScript
 
 - tsconfig 故意为 `strict: true` + `noImplicitAny: false` + `useUnknownInCatchVariables: false`（务实平衡：保住 null 安全，又不必给每个回调/catch 标注）。**不要**为"更严格"盲目打开它们，会引入大量噪音。

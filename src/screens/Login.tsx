@@ -69,7 +69,7 @@ export default function LoginScreen() {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 26, marginHorizontal: 2 }}>
           <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }} onPress={nav.notImplemented}>
-            <View pointerEvents="none"><Toggle on /></View>
+            <View style={{ pointerEvents: 'none' }}><Toggle on /></View>
             <Text style={{ fontFamily: FONTS.head, fontSize: 14, color: t.inkSoft, fontWeight: '500' }}>记住我</Text>
           </Pressable>
           <Pressable onPress={nav.notImplemented}>
