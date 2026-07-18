@@ -1,10 +1,10 @@
 import React from 'react';
-import { Animated, FlatList, Pressable, Text, View } from 'react-native';
+import { Animated, FlatList, Platform, Pressable, Text, View } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Icon from '../components/Icon';
 import { StatusBar } from '../components/ui';
-import ImagePager, { ImagePagerHandle, ImagePagerItem } from '../components/ImagePager';
-import ZoomableImage, { ViewerImage } from '../components/ZoomableImage';
+import ViewerGallery, { ViewerGalleryHandle, ViewerItem } from '../components/ViewerGallery';
+import ViewerImage from '../components/ViewerImage';
 import { useNav } from '../useNav';
 import { FONTS } from '../theme';
 import { READER_THEMES, getViewerHinted, markViewerHinted } from '../reading';
@@ -15,42 +15,7 @@ import { clamp } from '../util';
 
 // 固定纸白 chrome（贴合阅读模式默认外观，不跟随/切换主题），与 Reader.tsx 的 chrome 同源。
 const T = READER_THEMES.paper;
-const ANIM = { duration: 300, useNativeDriver: true } as const;
-// Only pages within ±WINDOW of the current one mount a real image; the native pager
-// still instantiates every child, so this caps concurrent high-priority decodes on
-// open. WINDOW ⊇ the pager's pre-mounted ±1 and prefetchAround's ±2, so a normal swipe
-// always lands on an already-loaded page (no flash-of-placeholder on a single turn).
-const WINDOW = 2;
-
-// 单页包装：memo 让翻页时只有进出预挂载窗口/active 翻转的页重渲染，其余页（含远页的
-// 空占位）整棵跳过——否则每次吸附 setI 都会重建全部 N 页子树，大图集在低端机上掉帧。
-const PagerPage = React.memo(function PagerPage({ item, active, mounted, W, H, onZoomChange, onToggleChrome, onEdgeTap, onDismiss }: {
-  item: ImagePagerItem;
-  active: boolean;
-  mounted: boolean;
-  W: number;
-  H: number;
-  onZoomChange: (zoomed: boolean) => void;
-  onToggleChrome: () => void;
-  onEdgeTap: (dir: -1 | 1) => void;
-  onDismiss: () => void;
-}) {
-  // Distant pages render an empty spacer instead of a loading ZoomableImage, so a
-  // large gallery doesn't fire N high-priority image decodes the moment it opens.
-  if (!mounted) return <View style={{ width: W, height: H }} />;
-  return (
-    <ZoomableImage
-      item={item}
-      active={active}
-      W={W}
-      H={H}
-      onZoomChange={onZoomChange}
-      onToggleChrome={onToggleChrome}
-      onEdgeTap={onEdgeTap}
-      onDismiss={onDismiss}
-    />
-  );
-});
+const ANIM = { duration: 300, useNativeDriver: Platform.OS !== 'web' } as const;
 
 // —— 底部进度滑块（复刻 reader 的 slider，按页定位） ——
 function PageSlider({ i, n, onJump }: { i: number; n: number; onJump: (k: number) => void }) {
@@ -86,7 +51,7 @@ function PageSlider({ i, n, onJump }: { i: number; n: number; onJump: (k: number
 export default function ImageViewerScreen({ route }: NativeStackScreenProps<RootStackParamList, 'viewer'>) {
   const nav = useNav();
   const title = route.params?.title;
-  const images: ImagePagerItem[] = route.params?.images?.length ? route.params.images : [{ cap: '图片占位' }];
+  const images: ViewerItem[] = route.params?.images?.length ? route.params.images : [{ cap: '图片占位' }];
   const n = images.length;
   const initialIndex = Math.min(Math.max(route.params?.index || 0, 0), n - 1);
 
@@ -99,11 +64,18 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
   const [vp, setVp] = React.useState({ W: 0, H: 0 });
   const { W, H } = vp;
 
-  const pagerRef = React.useRef<ImagePagerHandle>(null);
+  const pagerRef = React.useRef<ViewerGalleryHandle>(null);
   const targetRef = React.useRef(initialIndex);   // 即时记录“意图页”，让快速点击/连点不丢、不依赖滞后的 state
+  const iRef = React.useRef(initialIndex);        // 真实落点（chrome 隐藏期间不进 state，展开时再同步）
+  const uiRef = React.useRef(ui);
+  const panelRef = React.useRef(panel);
+  const prefetchTimer = React.useRef<any>(null);
   const uiAnim = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => { uiRef.current = ui; }, [ui]);
+  React.useEffect(() => { panelRef.current = panel; }, [panel]);
+  React.useEffect(() => () => { if (prefetchTimer.current) clearTimeout(prefetchTimer.current); }, []);
 
-  // —— 预读邻页（配合 offscreenPageLimit 的 Mihon 式预读）：大图秒出、翻页不闪旧图 ——
+  // —— 预读邻页（配合 Gallery windowSize 预挂载的 Mihon 式预读）：大图秒出、翻页不闪旧图 ——
   const prefetchAround = React.useCallback((center: number) => {
     for (const k of [center - 1, center + 1, center - 2, center + 2]) {
       if (k < 0 || k >= n) continue;
@@ -127,31 +99,46 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
   React.useEffect(() => { if (!hint && ui) { const t = setTimeout(() => setUi(false), 2200); return () => clearTimeout(t); } }, [hint, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => { Animated.timing(uiAnim, { toValue: ui ? 1 : 0, ...ANIM }).start(); }, [ui, uiAnim]);
 
-  // 页码唯一真相源：原生 pager 吸附后回调。
+  // 页码唯一真相源：翻页吸附后回调。settle 帧是连点链里下一次动画的起跑帧，
+  // 这里必须尽量零开销：chrome 隐藏时页码只进 ref 不 setState（免整屏重渲染），
+  // prefetch 延迟合并——连点时只预读最终落点的邻页。
   const onIndex = React.useCallback((pos: number) => {
     targetRef.current = pos;
-    setI(pos);
+    iRef.current = pos;
     // A freshly-settled page is always at scale 1, so clear any zoom flag left stuck
     // by paging via the on-screen prev/next/slider chrome while a page was zoomed
     // (that path doesn't run the leaving page's resetZoom report).
     setZoomed(false);
-    prefetchAround(pos);
+    if (uiRef.current || panelRef.current) setI(pos);
+    if (prefetchTimer.current) clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = setTimeout(() => prefetchAround(pos), 150);
   }, [prefetchAround]);
-  // 点击/按钮翻页：带动画的 setPage（去重避免重复命令）。
+  // 点击/按钮翻页（去重避免重复命令）。动画期间 activeIndex 不动 → 挂载窗口停在
+  // 上次落点 ±2，连点把目标推出窗口时降级为直达跳转，避免滑进未挂载的空白页。
   const go = React.useCallback((ni: number) => {
     const t = clamp(ni, 0, n - 1);
     if (t === targetRef.current) return;
     targetRef.current = t;
+    if (Math.abs(t - iRef.current) > 2) {
+      pagerRef.current?.jumpTo(t);
+      return;
+    }
     pagerRef.current?.setPage(t);
   }, [n]);
-  // 滑块/目录跳转：无动画直达。
+  // 滑块/目录跳转：直达。
   const jump = React.useCallback((ni: number) => {
     const t = clamp(ni, 0, n - 1);
     targetRef.current = t;
-    pagerRef.current?.setPageWithoutAnimation(t);
+    pagerRef.current?.jumpTo(t);
   }, [n]);
 
-  const toggleChrome = React.useCallback(() => setUi((v) => !v), []);
+  // 手指开始拖动即回收未完成的 setPage 意图：动画可能被这次拖动取消且吸附回原页
+  //（此时不触发 onIndex），不回收的话下一次 edgeTap 会从虚高的 targetRef 起算而跳两页。
+  const onPanStart = React.useCallback(() => { targetRef.current = iRef.current; }, []);
+  const toggleChrome = React.useCallback(() => {
+    setI(iRef.current);   // chrome 隐藏期间页码没进 state，展开前补同步（相同值时 React 自动跳过）
+    setUi((v) => !v);
+  }, []);
   const onDismiss = React.useCallback(() => nav.closeViewer(), [nav]);
   const onEdgeTap = React.useCallback((dir: -1 | 1) => go(targetRef.current + dir), [go]);
 
@@ -160,47 +147,39 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
     setVp({ W: width, H: height });
   };
 
-  const renderPage = React.useCallback((item: ImagePagerItem, k: number) => (
-    <PagerPage
-      item={item}
-      active={k === i}
-      mounted={Math.abs(k - i) <= WINDOW}
-      W={W}
-      H={H}
-      onZoomChange={setZoomed}
-      onToggleChrome={toggleChrome}
-      onEdgeTap={onEdgeTap}
-      onDismiss={onDismiss}
-    />
-  ), [i, W, H, toggleChrome, onEdgeTap, onDismiss]);
-
   const topTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [-150, 0] });
   const botTY = uiAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }} onLayout={onLayout}>
-      {/* —— 翻页画布（原生 ViewPager2 吸附 + 逐页缩放层） —— */}
+    // 背景黑底在 ViewerGallery 内部（native 上下拖拽时渐隐透出下层，配合 transparentModal）。
+    <View style={{ flex: 1 }} onLayout={onLayout}>
+      {/* —— 翻页画布（UI 线程手势：吸附翻页 + 捏合/双击缩放 + 拖拽退出） —— */}
       {W > 0 && (
-        <ImagePager
+        <ViewerGallery
           ref={pagerRef}
           images={images}
           initialIndex={initialIndex}
-          zoomed={zoomed}
+          W={W}
+          H={H}
           onIndex={onIndex}
-          renderPage={renderPage}
+          onZoomChange={setZoomed}
+          onToggleChrome={toggleChrome}
+          onEdgeTap={onEdgeTap}
+          onDismiss={onDismiss}
+          onPanStart={onPanStart}
         />
       )}
 
       {/* —— 翻页热区指示（暗底上的 chevron） —— */}
       {ui && !zoomed && !panel && (
         <>
-          <View pointerEvents="none" style={{ position: 'absolute', left: 10, top: '50%', marginTop: -13, opacity: i > 0 ? 1 : 0.2 }}><Icon name="back" size={26} color="rgba(255,255,255,.5)" /></View>
-          <View pointerEvents="none" style={{ position: 'absolute', right: 10, top: '50%', marginTop: -13, opacity: i < n - 1 ? 1 : 0.2 }}><Icon name="chevRight" size={26} color="rgba(255,255,255,.5)" /></View>
+          <View style={{ pointerEvents: 'none', position: 'absolute', left: 10, top: '50%', marginTop: -13, opacity: i > 0 ? 1 : 0.2 }}><Icon name="back" size={26} color="rgba(255,255,255,.5)" /></View>
+          <View style={{ pointerEvents: 'none', position: 'absolute', right: 10, top: '50%', marginTop: -13, opacity: i < n - 1 ? 1 : 0.2 }}><Icon name="chevRight" size={26} color="rgba(255,255,255,.5)" /></View>
         </>
       )}
 
       {/* —— 顶栏（对齐 ReaderChrome.top） —— */}
-      <Animated.View pointerEvents={ui ? 'auto' : 'none'} style={{ position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: T.chrome, borderBottomWidth: 1, borderBottomColor: T.line, transform: [{ translateY: topTY }] }}>
+      <Animated.View style={{ pointerEvents: ui ? 'auto' : 'none', position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: T.chrome, borderBottomWidth: 1, borderBottomColor: T.line, transform: [{ translateY: topTY }] }}>
         <StatusBar color={T.ink} />
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 12, gap: 6 }}>
           <Pressable onPress={nav.closeViewer} style={{ width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' }}><Icon name="back" size={22} color={T.ink} /></Pressable>
@@ -213,7 +192,7 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
       </Animated.View>
 
       {/* —— 底栏（导航行 + 目录） —— */}
-      <Animated.View pointerEvents={ui ? 'auto' : 'none'} style={{ position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: T.chrome, borderTopWidth: 1, borderTopColor: T.line, paddingHorizontal: 22, paddingTop: 16, paddingBottom: 22, transform: [{ translateY: botTY }] }}>
+      <Animated.View style={{ pointerEvents: ui ? 'auto' : 'none', position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: T.chrome, borderTopWidth: 1, borderTopColor: T.line, paddingHorizontal: 22, paddingTop: 16, paddingBottom: 22, transform: [{ translateY: botTY }] }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <Pressable disabled={i === 0} onPress={() => go(targetRef.current - 1)} style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', opacity: i === 0 ? 0.4 : 1 }}><Icon name="back" size={20} color={i === 0 ? T.soft : T.ink} /></Pressable>
           <View style={{ flex: 1 }}><PageSlider i={i} n={n} onJump={jump} /></View>

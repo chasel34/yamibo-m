@@ -167,7 +167,7 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
               {items.length > 0 ? (
                 <>
                   <Divider />
-                  <View style={{ opacity: paging ? 0.5 : 1 }} pointerEvents={paging ? 'none' : 'auto'}>
+                  <View style={{ opacity: paging ? 0.5 : 1, pointerEvents: paging ? 'none' : 'auto' }}>
                     <Pager page={page} totalPages={totalPages} onJump={goPage} cap={`共 ${totalThreads || items.length} 帖 · 每页 ${tpp} 条`} />
                   </View>
                 </>

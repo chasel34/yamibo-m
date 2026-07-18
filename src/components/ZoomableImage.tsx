@@ -1,40 +1,17 @@
 import React from 'react';
-import { Animated, PanResponder, Pressable, View } from 'react-native';
-import CachedImage from './CachedImage';
-import { StripeImg } from './ui';
-import { displayImageUrl } from '../api';
+import { Animated, PanResponder, Platform, Pressable, View } from 'react-native';
+import ViewerImage from './ViewerImage';
 import { clamp } from '../util';
-import type { ImagePagerItem } from './ImagePager';
+import type { ViewerItem } from './ViewerGallery';
 
 const DOUBLE_MS = 260;        // 双击判定窗口（仅中间带 / 放大态用；边缘点击零延迟）
 const MAX_SCALE = 4;          // 捏合上限
 const ZOOM_SCALE = 2.4;       // 双击放大目标倍数
 const DISMISS_DY = 120;       // 上下滑动退出阈值（px）
-
-// —— 单页 / 缩略图：expo-image 渲染真实图片，失败降级到 StripeImg 占位 ——
-// 关键点：recyclingKey 配合 pager 回收防串/闪旧图；allowDownscaling 走 Coil 式降采样
-// （安卓上解码/内存最大收益）；transition=0 不淡入让翻页更跟手。
-export function ViewerImage({ item, contain }: { item?: ImagePagerItem; contain?: boolean }) {
-  const [err, setErr] = React.useState(false);
-  React.useEffect(() => { setErr(false); }, [item && item.src]);
-  if (item && item.src && !err) {
-    return (
-      <CachedImage
-        source={{ uri: displayImageUrl(item.src) || item.src }}
-        onError={() => setErr(true)}
-        contentFit={contain ? 'contain' : 'cover'}
-        recyclingKey={item.src ?? undefined}
-        transition={0}
-        priority={contain ? 'high' : 'low'}
-        style={{ width: '100%', height: '100%' }}
-      />
-    );
-  }
-  return <StripeImg radius={0} cap={item && item.cap ? item.cap : '图片占位'} style={{ width: '100%', height: '100%' }} />;
-}
+const USE_ND = Platform.OS !== 'web';   // web 没有原生动画模块，传 true 只会告警再回退 JS
 
 interface ZoomableImageProps {
-  item: ImagePagerItem;
+  item: ViewerItem;
   active: boolean;            // 是否当前页（离开页自动还原缩放）
   W: number;
   H: number;
@@ -44,8 +21,9 @@ interface ZoomableImageProps {
   onDismiss: () => void;
 }
 
-// 逐页缩放层：只负责捏合缩放、放大后单指 pan、双击放大/还原、上下滑动退出、以及点击。
-// 横向翻页交给外层 PagerView——这里**绝不**夺取单指横向手势（见 onMoveShouldSetPanResponderCapture）。
+// 【web 专用】逐页缩放层：捏合缩放、放大后单指 pan、双击放大/还原、上下滑动退出、以及点击。
+// 横向翻页交给外层 FlatList——这里**绝不**夺取单指横向手势（见 onMoveShouldSetPanResponderCapture）。
+// native 已换成 ViewerGallery.native（UI 线程 worklet 手势），本文件只走浏览器验证流程。
 function ZoomableImage({ item, active, W, H, onZoomChange, onToggleChrome, onEdgeTap, onDismiss }: ZoomableImageProps) {
   const zScale = React.useRef(new Animated.Value(1)).current;
   const zTx = React.useRef(new Animated.Value(0)).current;    // 屏幕空间平移
@@ -55,6 +33,7 @@ function ZoomableImage({ item, active, W, H, onZoomChange, onToggleChrome, onEdg
   const z = React.useRef({ scale: 1, tx: 0, ty: 0 });         // 缩放/平移数值快照（手势读取）
   const g = React.useRef<any>({});                            // 手势状态机
   const tap = React.useRef<{ t: number; x: number; y: number; timer: any }>({ t: 0, x: 0, y: 0, timer: null });
+  const boxRef = React.useRef<View>(null);   // web 上即 DOM 节点，用来把视口坐标换算成组件本地坐标
   const activeRef = React.useRef(active);
   React.useEffect(() => { activeRef.current = active; }, [active]);
 
@@ -78,9 +57,9 @@ function ZoomableImage({ item, active, W, H, onZoomChange, onToggleChrome, onEdg
     report(false);
     if (animated) {
       Animated.parallel([
-        Animated.timing(zScale, { toValue: 1, duration: 260, useNativeDriver: true }),
-        Animated.timing(zTx, { toValue: 0, duration: 260, useNativeDriver: true }),
-        Animated.timing(zTy, { toValue: 0, duration: 260, useNativeDriver: true }),
+        Animated.timing(zScale, { toValue: 1, duration: 260, useNativeDriver: USE_ND }),
+        Animated.timing(zTx, { toValue: 0, duration: 260, useNativeDriver: USE_ND }),
+        Animated.timing(zTy, { toValue: 0, duration: 260, useNativeDriver: USE_ND }),
       ]).start();
     } else { zScale.setValue(1); zTx.setValue(0); zTy.setValue(0); }
   }, [zScale, zTx, zTy, report]);
@@ -95,26 +74,28 @@ function ZoomableImage({ item, active, W, H, onZoomChange, onToggleChrome, onEdg
     const py = locY - H / 2;
     const [cx, cy] = clampPan(px * (1 - ZOOM_SCALE), py * (1 - ZOOM_SCALE), ZOOM_SCALE);
     Animated.parallel([
-      Animated.timing(zScale, { toValue: ZOOM_SCALE, duration: 260, useNativeDriver: true }),
-      Animated.timing(zTx, { toValue: cx, duration: 260, useNativeDriver: true }),
-      Animated.timing(zTy, { toValue: cy, duration: 260, useNativeDriver: true }),
+      Animated.timing(zScale, { toValue: ZOOM_SCALE, duration: 260, useNativeDriver: USE_ND }),
+      Animated.timing(zTx, { toValue: cx, duration: 260, useNativeDriver: USE_ND }),
+      Animated.timing(zTy, { toValue: cy, duration: 260, useNativeDriver: USE_ND }),
     ]).start();
     z.current = { scale: ZOOM_SCALE, tx: cx, ty: cy };
     report(true);
   }, [W, H, clampPan, resetZoom, zScale, zTx, zTy, report]);
 
   // 点击（治本点击延迟）：边缘单击立即翻页、不进双击计时器；中间带/放大态才用双击窗口
-  // 区分单击(切 chrome)与双击(放大 / 还原)。
+  // 区分单击(切 chrome)与双击(放大 / 还原)。任何新点击先撤销未决的"切菜单"计时器——
+  // 快速连点（含落点漂移跨区、两击相距过远）只按最后语义执行，不再冒出菜单。
   const handlePress = React.useCallback((locX: number, locY: number) => {
+    const dt = tap.current;
+    if (dt.timer) { clearTimeout(dt.timer); dt.timer = null; }
     const frac = W ? locX / W : 0.5;
     if (z.current.scale <= 1.001 && (frac < 0.30 || frac > 0.70)) {
+      tap.current = { t: 0, x: 0, y: 0, timer: null };
       onEdgeTap(frac < 0.30 ? -1 : 1);
       return;
     }
     const now = Date.now();
-    const dt = tap.current;
     if (now - dt.t < DOUBLE_MS && Math.abs(locX - dt.x) < 40 && Math.abs(locY - dt.y) < 40) {
-      if (dt.timer) clearTimeout(dt.timer);
       tap.current = { t: 0, x: 0, y: 0, timer: null };
       doubleTap(locX, locY);
     } else {
@@ -124,7 +105,7 @@ function ZoomableImage({ item, active, W, H, onZoomChange, onToggleChrome, onEdg
   }, [W, doubleTap, onEdgeTap, onToggleChrome]);
 
   const springY = React.useCallback(() => {
-    Animated.timing(posY, { toValue: 0, duration: 300, useNativeDriver: true }).start();
+    Animated.timing(posY, { toValue: 0, duration: 300, useNativeDriver: USE_ND }).start();
   }, [posY]);
 
   const pan = React.useMemo(() => {
@@ -187,9 +168,22 @@ function ZoomableImage({ item, active, W, H, onZoomChange, onToggleChrome, onEdg
   }, [clampPan, setZoom, resetZoom, springY, posY, onDismiss]);
 
   return (
-    <View style={{ width: W, height: H, overflow: 'hidden' }} {...pan.panHandlers}>
+    <View ref={boxRef} style={{ width: W, height: H, overflow: 'hidden' }} {...pan.panHandlers}>
       <Pressable
-        onPress={(e) => handlePress(e.nativeEvent.locationX, e.nativeEvent.locationY)}
+        onPress={(e) => {
+          // RN-web 的 press 事件没有 locationX（nativeEvent 是 DOM 事件），且桌面端 app
+          // 居中呈现为窄框——视口坐标 ≠ 组件坐标，必须用容器矩形把 clientX 换算成本地坐标。
+          const ne: any = e.nativeEvent;
+          const t = (ne.changedTouches && ne.changedTouches[0]) || ne;
+          let x = ne.locationX, y = ne.locationY;
+          if (typeof x !== 'number' || typeof y !== 'number') {
+            const node: any = boxRef.current;
+            const rect = node && typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+            x = rect && typeof t.clientX === 'number' ? t.clientX - rect.left : W / 2;
+            y = rect && typeof t.clientY === 'number' ? t.clientY - rect.top : H / 2;
+          }
+          handlePress(x, y);
+        }}
         android_disableSound
         style={{ flex: 1 }}
       >

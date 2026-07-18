@@ -154,7 +154,7 @@ export function HLine({ style }: { style?: StyleProp<ViewStyle> }) {
 export function Toast({ msg }: { msg?: string | null }) {
   if (!msg) return null;
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 120, alignItems: 'center', zIndex: 60 }}>
+    <View style={{ pointerEvents: 'none', position: 'absolute', left: 0, right: 0, bottom: 120, alignItems: 'center', zIndex: 60 }}>
       <View style={{ backgroundColor: 'rgba(40,28,24,0.92)', paddingHorizontal: 18, paddingVertical: 11, borderRadius: 999 }}>
         <Text style={{ color: '#fff', fontFamily: FONTS.head, fontSize: 13, fontWeight: '500' }}>{msg}</Text>
       </View>

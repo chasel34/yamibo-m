@@ -545,7 +545,7 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
             ListFooterComponent={(
               /* pager（含按楼层定位） */
               <View>
-                <View style={{ opacity: paging ? 0.5 : 1 }} pointerEvents={paging ? 'none' : 'auto'}>
+                <View style={{ opacity: paging ? 0.5 : 1, pointerEvents: paging ? 'none' : 'auto' }}>
                   <Pager
                     page={page}
                     totalPages={totalPages}
