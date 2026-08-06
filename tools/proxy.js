@@ -14,6 +14,8 @@
  */
 const http = require('http');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const { URL } = require('url');
 
 const TARGET = 'https://bbs.yamibo.com';
@@ -36,6 +38,78 @@ if (process.env.YAMIBO_AUTH && process.env.YAMIBO_SALTKEY) {
 }
 function cookieHeader() {
   return Array.from(jar.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+// BAIDU_WAF 质询令牌（nox_jst_v1 等）无法由纯 Node 转发获得，由 solveWafChallenge()
+// 用 headless Chrome 真实过质询后取得。持久化到磁盘，代理重启免重解。
+const WAF_COOKIE_NAME = /^(nox|acw_tc|cdn_sec_tc)/i;
+const WAF_COOKIE_FILE = path.join(__dirname, '.waf-cookies.json');
+
+function saveWafCookies() {
+  const waf = {};
+  jar.forEach((v, k) => { if (WAF_COOKIE_NAME.test(k)) waf[k] = v; });
+  try {
+    fs.writeFileSync(WAF_COOKIE_FILE, JSON.stringify(waf, null, 2));
+  } catch (e) { /* best-effort */ }
+}
+
+function loadWafCookies() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(WAF_COOKIE_FILE, 'utf8'));
+    Object.keys(saved).forEach((k) => {
+      if (WAF_COOKIE_NAME.test(k) && saved[k]) jar.set(k, String(saved[k]));
+    });
+  } catch (e) { /* no saved cookies yet */ }
+}
+loadWafCookies();
+
+function looksNoxChallenge(status, bodyBuf) {
+  const head = bodyBuf.toString('utf8', 0, Math.min(bodyBuf.length, 4096));
+  if (/__nox|nox_jst|\/static\/wb\//i.test(head)) return true;
+  return status === 405 && /^\s*(<!doctype|<html|<head|<script)/i.test(head);
+}
+
+// 自动解质询：用本机 Chrome（headless）真实加载一次论坛页，让 WAF 的质询 JS
+// 正常执行并种下 nox cookie，再搬进 jar——与原生端 WebView 过质询同理，全程无感。
+// 失败（如未装 Chrome）时返回 false，由 app 侧 WafGate 弹窗兜底。
+let wafSolving = null;
+function solveWafChallenge() {
+  if (wafSolving) return wafSolving;
+  wafSolving = (async () => {
+    let puppeteer;
+    try {
+      puppeteer = require('puppeteer-core');
+    } catch (e) {
+      console.log('[yamibo proxy] puppeteer-core 未安装，无法自动过 WAF 质询（npm install 可修复）');
+      return false;
+    }
+    console.log('[yamibo proxy] 检测到 WAF 质询，正在用 headless Chrome 自动通过…');
+    const browser = await puppeteer.launch({ channel: 'chrome', headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${TARGET}/forum.php?mobile=2`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      for (let i = 0; i < 25; i += 1) {
+        const cookies = await browser.cookies();
+        const waf = cookies.filter((c) => WAF_COOKIE_NAME.test(c.name) && c.domain.endsWith('yamibo.com'));
+        if (waf.some((c) => /^nox/i.test(c.name))) {
+          waf.forEach((c) => jar.set(c.name, c.value));
+          saveWafCookies();
+          console.log(`[yamibo proxy] WAF 质询已通过（${waf.map((c) => c.name).join(', ')}）`);
+          return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+      console.log('[yamibo proxy] WAF 质询超时未通过');
+      return false;
+    } finally {
+      await browser.close().catch(() => {});
+    }
+  })().catch((e) => {
+    console.log('[yamibo proxy] 自动过 WAF 质询失败：', e.message);
+    return false;
+  });
+  wafSolving.finally(() => { wafSolving = null; });
+  return wafSolving;
 }
 function storeSetCookies(list) {
   (list || []).forEach((line) => {
@@ -163,7 +237,7 @@ const server = http.createServer((req, res) => {
   setCorsHeaders(req, res);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-  if (req.url === '/__reset') { jar.clear(); res.writeHead(200); res.end('ok'); return; }
+  if (req.url === '/__reset') { jar.clear(); loadWafCookies(); res.writeHead(200); res.end('ok'); return; }
 
   if (req.url.startsWith('/__image?')) {
     const imageUrl = new URL(req.url, 'http://localhost').searchParams.get('url');
@@ -193,37 +267,52 @@ const server = http.createServer((req, res) => {
   const chunks = [];
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
-    const body = Buffer.concat(chunks);
-    const headers = {
-      'User-Agent': UA,
-      'Accept': 'application/json',
-      'Accept-Encoding': 'identity',
-      'Referer': TARGET + '/',
-      'Origin': TARGET,
-    };
-    if (jar.size) headers['Cookie'] = cookieHeader();
-    if (req.method === 'POST') {
-      headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      headers['Content-Length'] = Buffer.byteLength(body);
-    }
-    const preq = https.request(target, { method: req.method, headers }, (pres) => {
-      storeSetCookies(pres.headers['set-cookie']);
-      const out = [];
-      pres.on('data', (d) => out.push(d));
-      pres.on('end', () => {
-        const buf = Buffer.concat(out);
-        res.writeHead(pres.statusCode || 502, { 'Content-Type': pres.headers['content-type'] || 'application/json; charset=utf-8' });
-        res.end(buf);
-      });
-    });
-    preq.on('error', (e) => {
-      res.writeHead(502, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: String(e) }));
-    });
-    if (body.length) preq.write(body);
-    preq.end();
+    forwardApi(target, req.method, Buffer.concat(chunks), res, false);
   });
 });
+
+function forwardApi(target, method, body, res, retried) {
+  const headers = {
+    'User-Agent': UA,
+    'Accept': 'application/json',
+    'Accept-Encoding': 'identity',
+    'Referer': TARGET + '/',
+    'Origin': TARGET,
+  };
+  if (jar.size) headers['Cookie'] = cookieHeader();
+  if (method === 'POST') {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    headers['Content-Length'] = Buffer.byteLength(body);
+  }
+  const preq = https.request(target, { method, headers }, (pres) => {
+    storeSetCookies(pres.headers['set-cookie']);
+    const out = [];
+    pres.on('data', (d) => out.push(d));
+    pres.on('end', () => {
+      const buf = Buffer.concat(out);
+      // 被 WAF 质询拦下的响应不透传给 app：自动解质询后原地重试一次（质询被拦时
+      // 请求未到达 Discuz，POST 重试同样安全）。
+      if (!retried && looksNoxChallenge(pres.statusCode, buf)) {
+        solveWafChallenge().then((solved) => {
+          if (solved) forwardApi(target, method, body, res, true);
+          else {
+            res.writeHead(pres.statusCode || 502, { 'Content-Type': pres.headers['content-type'] || 'application/json; charset=utf-8' });
+            res.end(buf);
+          }
+        });
+        return;
+      }
+      res.writeHead(pres.statusCode || 502, { 'Content-Type': pres.headers['content-type'] || 'application/json; charset=utf-8' });
+      res.end(buf);
+    });
+  });
+  preq.on('error', (e) => {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: String(e) }));
+  });
+  if (body.length) preq.write(body);
+  preq.end();
+}
 
 if (require.main === module) {
   server.listen(PORT, () => {

@@ -98,6 +98,7 @@ export type ApiErrorCode =
   | 'http'
   | 'non_json'
   | 'risk_control'
+  | 'waf_challenge'
   | 'rate_limited'
   | 'auth_expired'
   | 'business'
@@ -131,6 +132,17 @@ function snippet(text?: string | null): string {
 
 function looksRateLimited(text: string): boolean {
   return /429|too many|rate.?limit|frequency|访问过于频繁|请求过于频繁|操作太快|稍后再试/i.test(text);
+}
+
+// BAIDU_WAF 的 JS 质询页：405（或 200）+ HTML，内嵌 __nox 变量与 nox_*.js 脚本，
+// 浏览器/WebView 执行后种下 nox_jst_v1 cookie 才放行（issue #19）。
+function looksHtml(text: string): boolean {
+  return /^\s*(<!doctype|<html|<head|<script)/i.test(text);
+}
+
+function looksNoxChallenge(status: number, text: string): boolean {
+  if (/__nox|nox_jst|\/static\/wb\//i.test(text)) return true;
+  return status === 405 && looksHtml(text);
 }
 
 function looksRiskControl(text: string): boolean {
@@ -270,6 +282,37 @@ function shouldRetry(err: unknown): boolean {
   return err.code === 'non_json';
 }
 
+// ---- WAF 质询协调：原生 WafGate 注册处理器，质询发生时用隐藏 WebView 过质询，
+// 处理器返回 true 后由 request() 自动重试原请求。web 端由本地代理自动解质询，
+// 不注册处理器（handler 为 null → resolveWafChallenge 返回 false）。
+type WafChallengeHandler = () => Promise<boolean>;
+let wafChallengeHandler: WafChallengeHandler | null = null;
+let wafResolution: Promise<boolean> | null = null;
+
+export function setWafChallengeHandler(handler: WafChallengeHandler | null): void {
+  wafChallengeHandler = handler;
+}
+
+// 并发请求同时撞上质询时共享同一次解决流程，避免弹多个遮罩。
+function resolveWafChallenge(): Promise<boolean> {
+  if (!wafChallengeHandler) return Promise.resolve(false);
+  if (!wafResolution) {
+    wafResolution = wafChallengeHandler().catch(() => false);
+    wafResolution.finally(() => { wafResolution = null; });
+  }
+  return wafResolution;
+}
+
+// 供 WafGate 轮询探测质询是否已放行；绕过 request() 以免递归触发质询处理。
+export async function probeWafCleared(): Promise<boolean> {
+  try {
+    await requestOnce('forumindex', {}, {});
+    return true;
+  } catch (e) {
+    return !(e instanceof ApiError && e.code === 'waf_challenge');
+  }
+}
+
 async function requestOnce(module: string, params: Record<string, any>, { method = 'GET', body = null }: RequestOpts): Promise<any> {
   try { await hydrateSessionCookies(); } catch (e) {}
   const qs = new URLSearchParams({ version: '4', module, ...params }).toString();
@@ -286,6 +329,9 @@ async function requestOnce(module: string, params: Record<string, any>, { method
     throw apiNetworkError(module, isTimeoutError(e));
   }
   const text = await res.text();
+  if (looksNoxChallenge(res.status, text)) {
+    throw new ApiError('waf_challenge', '站点开启了安全验证，请稍后重试', { module, status: res.status, snippet: snippet(text) });
+  }
   if (!res.ok) {
     const bodySnippet = snippet(text);
     if (res.status === 429 || looksRateLimited(text)) {
@@ -320,6 +366,11 @@ async function request(module: string, params: Record<string, any> = {}, opts: R
   try {
     return await requestOnce(module, params, opts);
   } catch (e) {
+    // 质询被 WAF 拦下时请求从未到达 Discuz，通过质询后重试对 POST 也安全。
+    if (e instanceof ApiError && e.code === 'waf_challenge') {
+      if (await resolveWafChallenge()) return requestOnce(module, params, opts);
+      throw e;
+    }
     if ((opts.method || 'GET') === 'GET' && shouldRetry(e)) {
       await sleep(600);
       return requestOnce(module, params, opts);

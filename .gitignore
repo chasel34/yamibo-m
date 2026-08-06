@@ -36,6 +36,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# dev proxy: injected WAF challenge cookies (tools/proxy.js)
+tools/.waf-cookies.json
+
 # typescript
 *.tsbuildinfo
 
