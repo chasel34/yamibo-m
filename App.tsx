@@ -15,6 +15,7 @@ import { checkAuth, logout as apiLogout } from './src/api';
 import { AppUpdatesProvider } from './src/appUpdates';
 import { Toast } from './src/components/ui';
 import TabBar from './src/components/TabBar';
+import WafGate from './src/components/WafGate';
 import type { ThemeName, RootStackParamList } from './src/types';
 
 import LoginScreen from './src/screens/Login';
@@ -114,6 +115,7 @@ function Shell() {
       <AppUpdatesProvider>
         <RootNavigator />
       </AppUpdatesProvider>
+      <WafGate />
       <ToastLayer />
       <NativeStatusBar
         hidden={false}

@@ -75,7 +75,9 @@ function isAllowedCookieName(name: string, cookiepre: string): boolean {
   return name === `${cookiepre}auth`
     || name === `${cookiepre}saltkey`
     || name === `${cookiepre}sid`
-    || RISK_CONTROL_COOKIES.has(name);
+    || RISK_CONTROL_COOKIES.has(name)
+    // BAIDU_WAF 质询令牌（nox_jst_v1 等）：随会话持久化，重启后免于重新过质询。
+    || /^nox_/i.test(name);
 }
 
 function normalizeCookie(raw: any, cookiepre: string): StoredCookie | null {
