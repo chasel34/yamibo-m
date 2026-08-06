@@ -13,7 +13,7 @@ import { parseForumLink } from '../forumLinks';
 import { recordThread } from '../history';
 import { LITERATURE_FIDS } from '../reading';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { Block, Floor as FloorType, RichTextRun, ThreadData, ThreadImage, ThreadNavParam, RootStackParamList } from '../types';
+import type { Block, Floor as FloorType, NavAuthor, RichTextRun, ThreadData, ThreadImage, ThreadNavParam, RootStackParamList } from '../types';
 
 function RichText({ runs, onLink }: { runs: RichTextRun[]; onLink?: (href: string) => void }) {
   const { t } = useTheme();
@@ -105,13 +105,19 @@ function FloorBlock({ b, onImg, onLink }: { b: Block; onImg?: (src: string | nul
 
 const Floor = React.memo(function Floor({ f, onImg, onLink, onUnavailable }: { f: FloorType; onImg?: (src: string | null) => void; onLink?: (href: string) => void; onUnavailable: () => void }) {
   const { t } = useTheme();
+  const nav = useNav();
+  const openProfile = React.useCallback((u?: NavAuthor) => { if (u?.uid) nav.push('profile', { uid: u.uid }); }, [nav]);
   return (
     <View style={{ paddingTop: 20, paddingBottom: 6, paddingHorizontal: 22 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 14 }}>
-        <Avatar user={f.user} size={36} />
+        <Pressable onPress={() => openProfile(f.user)} disabled={!f.user?.uid} hitSlop={4}>
+          <Avatar user={f.user} size={36} />
+        </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{f.user.name}</Text>
+            <Pressable onPress={() => openProfile(f.user)} disabled={!f.user?.uid} hitSlop={4} style={{ flexShrink: 1 }}>
+              <Text numberOfLines={1} style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{f.user.name}</Text>
+            </Pressable>
             {f.op && <Text style={{ fontFamily: FONTS.head, fontSize: 11, fontWeight: '700', color: t.accentInk }}>楼主</Text>}
           </View>
           <Text style={{ fontFamily: FONTS.head, fontSize: 12, color: t.muted, fontWeight: '500', marginTop: 2 }}>{f.time}</Text>
@@ -497,6 +503,10 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
     );
   }, [flash, t, opOnly, totalFloors, thread.replies, openImg, openLink, nav.notImplemented]);
 
+  const openAuthor = React.useCallback(() => {
+    if (thread.author?.uid) nav.push('profile', { uid: thread.author.uid });
+  }, [nav, thread.author]);
+
   const header = React.useMemo(() => (
     <View>
       <View style={{ paddingTop: 2, paddingHorizontal: 22, paddingBottom: 18 }}>
@@ -505,10 +515,14 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
         </Kicker>
         <Text style={{ fontFamily: FONTS.head, fontSize: 26, fontWeight: '700', color: t.ink, lineHeight: 34.8, letterSpacing: -0.2, marginBottom: 20 }}>{thread.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
-          <Avatar user={thread.author} size={38} />
+          <Pressable onPress={openAuthor} disabled={!thread.author?.uid} hitSlop={4}>
+            <Avatar user={thread.author} size={38} />
+          </Pressable>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{thread.author?.name}</Text>
+              <Pressable onPress={openAuthor} disabled={!thread.author?.uid} hitSlop={4} style={{ flexShrink: 1 }}>
+                <Text numberOfLines={1} style={{ fontFamily: FONTS.head, fontSize: 14.5, fontWeight: '600', color: t.ink }}>{thread.author?.name}</Text>
+              </Pressable>
               <Text style={{ fontFamily: FONTS.head, fontSize: 11, fontWeight: '700', color: t.accentInk }}>楼主</Text>
             </View>
             <Text style={{ fontFamily: FONTS.head, fontSize: 12, color: t.muted, fontWeight: '500', marginTop: 2 }}>
@@ -519,7 +533,7 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
       </View>
       <Divider />
     </View>
-  ), [board, thread, page, totalPages, t]);
+  ), [board, thread, page, totalPages, t, openAuthor]);
 
   return (
     <Screen>

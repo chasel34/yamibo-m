@@ -8,7 +8,7 @@ import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
 import { getProfile, getSelfProfile } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { UserProfile, RootStackParamList } from '../types';
+import type { UserProfile, UserPostsTab, RootStackParamList } from '../types';
 
 function StatCell({ n, label, onPress }: { n: number | string; label: string; onPress?: (() => void) | null }) {
   const { t } = useTheme();
@@ -47,6 +47,12 @@ export default function ProfileScreen({ route }: NativeStackScreenProps<RootStac
   React.useEffect(() => { load(); }, [load]);
 
   const self = u ? u.self : wantSelf;
+  const openPosts = React.useCallback((user: UserProfile, tab: UserPostsTab) => {
+    nav.push('userposts', {
+      uid: user.uid, name: user.name, self: user.self,
+      tab, stats: { themes: user.stats.themes, replies: user.stats.replies },
+    });
+  }, [nav]);
   const div = <Divider />;
   const divFull = <HLine />;
 
@@ -71,11 +77,9 @@ export default function ProfileScreen({ route }: NativeStackScreenProps<RootStac
               <Text style={{ fontFamily: FONTS.body, fontSize: 14.5, color: t.inkSoft, marginTop: 14, lineHeight: 24, maxWidth: 290, textAlign: 'center' }}>{u.bio}</Text>
             </View>
             <View style={{ flexDirection: 'row', paddingVertical: 22, paddingHorizontal: 16 }}>
-              <StatCell n={u.stats.themes} label="主题" />
-              <StatCell n={u.stats.replies} label="回复" />
+              <StatCell n={u.stats.themes} label="主题" onPress={() => openPosts(u, 'threads')} />
+              <StatCell n={u.stats.replies} label="回复" onPress={() => openPosts(u, 'replies')} />
               <StatCell n={u.stats.collections} label="收藏" onPress={self ? () => nav.push('collections', {}) : null} />
-              <StatCell n={u.stats.follow} label="关注" />
-              <StatCell n={u.stats.fans} label="粉丝" />
             </View>
             {divFull}
             <InfoRow label="性别" v={u.gender} />
@@ -84,19 +88,6 @@ export default function ProfileScreen({ route }: NativeStackScreenProps<RootStac
             {div}
             <InfoRow label="所在地" v={u.location} />
             {divFull}
-            {self ? null : (
-              <>
-                <View style={{ flexDirection: 'row', gap: 12, paddingTop: 22, paddingHorizontal: 22 }}>
-                  <Pressable onPress={nav.notImplemented} style={{ flex: 1, height: 52, borderRadius: 999, backgroundColor: t.accent, alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
-                    <Text style={{ color: t.onAccent, fontFamily: FONTS.head, fontSize: 16.5, fontWeight: '600' }}>关注</Text>
-                  </Pressable>
-                  <Pressable onPress={nav.notImplemented} style={{ flex: 1, height: 52, borderRadius: 999, backgroundColor: t.card2, alignItems: 'center', justifyContent: 'center', opacity: 0.4 }}>
-                    <Text style={{ color: t.inkSoft, fontFamily: FONTS.head, fontSize: 16.5, fontWeight: '600' }}>私信</Text>
-                  </Pressable>
-                </View>
-                <Text style={{ fontFamily: FONTS.body, textAlign: 'center', fontSize: 12, color: t.faint, paddingTop: 14 }}>暂无实现此功能</Text>
-              </>
-            )}
             <View style={{ height: 30 }} />
           </ScrollView>
         )}

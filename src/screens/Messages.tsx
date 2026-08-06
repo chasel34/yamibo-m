@@ -41,10 +41,13 @@ const ReminderRow = React.memo(function ReminderRow({ r, onPress, showDivider }:
 
 const DmRow = React.memo(function DmRow({ d, onPress, showDivider }: { d: PMItem; onPress: () => void; showDivider: boolean }) {
   const { t } = useTheme();
+  const nav = useNav();
   return (
     <View>
       <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 18, paddingHorizontal: 22 }}>
-        <Avatar user={d.user} size={46} />
+        <Pressable onPress={() => nav.push('profile', { uid: d.user.uid })} disabled={!d.user.uid} hitSlop={4}>
+          <Avatar user={d.user} size={46} />
+        </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 }}>
             <Text numberOfLines={1} style={{ fontFamily: FONTS.head, fontSize: 15, fontWeight: '600', color: t.ink, flex: 1 }}>{d.user.name}</Text>

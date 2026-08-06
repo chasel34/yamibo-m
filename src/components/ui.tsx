@@ -5,9 +5,10 @@ import CachedImage from './CachedImage';
 import Svg, { Rect, Defs, Pattern } from 'react-native-svg';
 import Icon from './Icon';
 import { useTheme, FONTS, Theme } from '../theme';
+import { useNav } from '../useNav';
 import { avatarUrl } from '../util';
 
-interface AvatarUser {
+export interface AvatarUser {
   uid?: string;
   avatar?: string;
   name?: string;
@@ -162,6 +163,42 @@ export function Toast({ msg }: { msg?: string | null }) {
   );
 }
 
+// ===================== Tag pill (ported from .tagpill) =====================
+export function TagPill({ children, tone = 'muted', style }: { children?: React.ReactNode; tone?: 'muted' | 'accent'; style?: StyleProp<ViewStyle> }) {
+  const { t } = useTheme();
+  const accent = tone === 'accent';
+  return (
+    <View style={[{ backgroundColor: accent ? t.accentSoft : t.card2, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 }, style]}>
+      <Text style={{ fontFamily: FONTS.head, fontSize: 11, fontWeight: '600', color: accent ? t.accentInk : t.muted }}>{children}</Text>
+    </View>
+  );
+}
+
+// ===================== Author line (avatar + name, both open the profile) =====================
+// 头像和用户名在设计里是两个独立热区，包在一起会把整行都变成可点，压掉行本身的点击。
+export function AuthorLine({ user, size = 22, fontSize = 12.5, color, children }: {
+  user?: AvatarUser | null;
+  size?: number;
+  fontSize?: number;
+  color?: string;
+  children?: React.ReactNode;    // 名字后面的附加标记，如「楼主」
+}) {
+  const { t } = useTheme();
+  const nav = useNav();
+  const open = user?.uid ? () => nav.push('profile', { uid: user.uid }) : undefined;
+  return (
+    <>
+      <Pressable onPress={open} disabled={!open} style={{ flexShrink: 0 }} hitSlop={4}>
+        <Avatar user={user} size={size} />
+      </Pressable>
+      <Pressable onPress={open} disabled={!open} style={{ flexShrink: 1, minWidth: 0 }} hitSlop={4}>
+        <Text numberOfLines={1} style={{ fontFamily: FONTS.head, fontSize, fontWeight: '600', color: color || t.inkSoft }}>{user?.name}</Text>
+      </Pressable>
+      {children}
+    </>
+  );
+}
+
 // ===================== Flat feed item (ported from .feed-item) =====================
 export interface FeedThread {
   tag: string;
@@ -170,19 +207,26 @@ export interface FeedThread {
   time: string;
   pinned?: boolean;
   boardName?: string;
+  author?: AvatarUser;
 }
 export const FeedItem = React.memo(function FeedItem({ t: th, onOpen, showBoard = false }: { t: FeedThread; onOpen: (t: FeedThread) => void; showBoard?: boolean }) {
   const { t } = useTheme();
+  const label = (showBoard ? th.boardName : th.tag) || '';
   return (
     <Pressable onPress={() => onOpen(th)} style={{ paddingVertical: 16, paddingHorizontal: 22 }}>
-      <Text style={{ fontFamily: FONTS.head, fontSize: 11.5, fontWeight: '700', letterSpacing: 1.6, color: t.muted, textTransform: 'uppercase', marginBottom: 8 }}>
-        {showBoard ? th.boardName : th.tag}{th.pinned ? '  ·  置顶' : ''}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+        {th.author ? <AuthorLine user={th.author} /> : null}
+        <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted, fontWeight: '500', marginLeft: 'auto' }}>
+          {th.time}{th.pinned ? '  ·  置顶' : ''}
+        </Text>
+      </View>
       <Text style={{ fontFamily: FONTS.head, color: t.ink, fontWeight: '700', fontSize: 17, lineHeight: 22.8, letterSpacing: -0.2, marginBottom: th.excerpt ? 7 : 8 }}>{th.title}</Text>
       {th.excerpt ? (
-        <Text numberOfLines={2} style={{ fontFamily: FONTS.body, color: t.inkSoft, fontSize: 13.5, lineHeight: 21, marginBottom: 9 }}>{th.excerpt}</Text>
+        <Text numberOfLines={2} style={{ fontFamily: FONTS.body, color: t.inkSoft, fontSize: 13.5, lineHeight: 21, marginBottom: 11 }}>{th.excerpt}</Text>
       ) : null}
-      <Text style={{ fontFamily: FONTS.head, fontSize: 12.5, color: t.muted, fontWeight: '500' }}>{th.time}</Text>
+      {label ? (
+        <View style={{ flexDirection: 'row', gap: 8 }}><TagPill>{label}</TagPill></View>
+      ) : null}
     </Pressable>
   );
 });

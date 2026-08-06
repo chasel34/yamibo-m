@@ -1,14 +1,23 @@
 const { Icon, Lily, StatusBar, Toggle, Avatar, StripeImg, NavHeader, Pager } = window;
 
 // ===================== Flat feed item (no card) =====================
-const FeedItem = ({t, onOpen, idx=0, showBoard=false}) => (
+const FeedItem = ({t, onOpen, idx=0, showBoard=false}) => {
+  const nav = window.useNav();
+  return (
   <div className="feed-item fade-up" style={{animationDelay:(idx*30)+"ms"}} onClick={()=>onOpen(t)}>
-    <div className="kicker" style={{marginBottom:8}}>{showBoard ? t.boardName : t.tag}{t.pinned ? "  ·  置顶" : ""}</div>
+    <div className="row" style={{gap:8, alignItems:"center", marginBottom:9}}>
+      {t.author && <span className="click" style={{display:"flex", flex:"0 0 auto"}} onClick={(e)=>window.openProfile(nav, t.author, e)}><Avatar user={t.author} size={22}/></span>}
+      {t.author && <span className="click" onClick={(e)=>window.openProfile(nav, t.author, e)} style={{fontFamily:"var(--font-head)", fontSize:12.5, fontWeight:600, color:"var(--ink-soft)", maxWidth:150, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{t.author.name}</span>}
+      <span className="timestamp" style={{marginLeft:"auto"}}>{t.time}{t.pinned ? "  ·  置顶" : ""}</span>
+    </div>
     <div className="feed-title" style={{marginBottom:t.excerpt?7:8}}>{t.title}</div>
-    {t.excerpt && <div className="feed-excerpt" style={{marginBottom:9, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{t.excerpt}</div>}
-    <div className="timestamp">{t.time}</div>
+    {t.excerpt && <div className="feed-excerpt" style={{marginBottom:11, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{t.excerpt}</div>}
+    <div className="row" style={{gap:8}}>
+      <span className="tagpill" style={{background:"var(--card-2)", color:"var(--muted)"}}>{showBoard ? t.boardName : t.tag}</span>
+    </div>
   </div>
-);
+  );
+};
 // keep old name as alias
 const ThreadCard = FeedItem;
 

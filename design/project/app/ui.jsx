@@ -207,8 +207,16 @@ const Pager = ({page, totalPages, onJump, cap, extra}) => {
   );
 };
 
+// ===================== 打开用户主页（任意用户对象）=====================
+function openProfile(nav, user, e){
+  if(e && e.stopPropagation) e.stopPropagation();
+  if(!nav || !user) return;
+  const p = window.DATA.profileFor(user);
+  nav.push("profile", {user:p, self: p.id==="me"});
+}
+
 // export
 Object.assign(window, {
   Icon, Lily, StatusBar, Toggle, Avatar, GroupPill, GROUP_TONES,
-  StripeImg, NavHeader, TabBar, TABS, Toast, shade, Pager,
+  StripeImg, NavHeader, TabBar, TABS, Toast, shade, Pager, openProfile,
 });

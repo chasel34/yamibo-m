@@ -55,18 +55,18 @@ export default function MineScreen() {
           </View>
           <Icon name="chevRight" size={20} color={t.faint} />
         </Pressable>
-        <View style={{ flexDirection: 'row', paddingTop: 6, paddingHorizontal: 16, paddingBottom: 20 }}>
-          {([['收藏', me.stats.collections], ['主题', me.stats.themes], ['回复', me.stats.replies], ['关注', me.stats.follow]] as const).map(([l, n], i) => (
-            <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ fontFamily: FONTS.head, fontSize: 18, fontWeight: '700', color: t.ink }}>{n}</Text>
-              <Text style={{ fontFamily: FONTS.head, fontSize: 11.5, color: t.muted, fontWeight: '500', marginTop: 3 }}>{l}</Text>
-            </View>
-          ))}
-        </View>
-        {divFull}
+        <HLine style={{ marginTop: 6 }} />
         <MRow icon="bookmark" label="我的收藏" sub={me.stats.collections + ' 篇'} onPress={() => nav.push('collections', {})} />
         {divIndent}
-        <MRow icon="doc" label="我的发帖" sub={me.stats.themes + ' 篇'} onPress={nav.notImplemented} />
+        <MRow
+          icon="doc"
+          label="我的发帖"
+          sub={me.stats.themes + ' 篇'}
+          onPress={() => nav.push('userposts', {
+            uid: me.uid, name: me.name, self: true,
+            tab: 'threads', stats: { themes: me.stats.themes, replies: me.stats.replies },
+          })}
+        />
         {divIndent}
         <MRow icon="history" label="浏览历史" onPress={() => nav.push('history', {})} />
         {divFull}

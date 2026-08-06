@@ -356,6 +356,94 @@ window.DATA = (function(){
     return arr;
   }
 
+  // ---- 板块 id -> 名称 ----
+  const BOARD_NAMES = {};
+  groups.forEach(g=> g.boards.forEach(b=>{
+    BOARD_NAMES[b.id] = b.name;
+    (b.subs||[]).forEach(s=> BOARD_NAMES[s.id] = s.name);
+  }));
+
+  // ---- 个人主页：我的主题 / 我的回复（确定性生成）----
+  const _POOL = threads.concat(litThreads, lnThreads).filter(t=>t.cat!=="公告");
+  const _myTimes = ["今天 09:24","今天 08:02","昨天 22:41","昨天 15:07","2026-8-4","2026-7-29","2026-7-23","2026-7-11","2026-6-30","2026-6-18"];
+  const _myFlags = {2:"投票", 5:"精华"};
+  const _myReplyTexts = [
+    "最后番外真的甜",
+    "多年以后…… 恭喜大佬了，佐伯女士好啊",
+    "这个发色不会和高中时小团体的发色有关吧",
+    "一样的，越睡越想睡",
+    "雪糕 冰镇西瓜 凉皮 凉菜",
+    "在德州也有小炉子，不过没有小饼呢",
+    "好吧，端午我也不经常吃",
+    "先码住，明天通勤路上慢慢看",
+    "这一段的留白处理得真好，赞同楼主的读法",
+    "十年老粉路过，谢谢楼主还在写",
+  ];
+  function _seed(user){ let h=0; const s=(user&&user.id)||"me"; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return h; }
+  function themesFor(user){
+    const off = _seed(user);
+    return Array.from({length:9}, (_,i)=>{
+      const src = _POOL[(off + i*5) % _POOL.length];
+      return Object.assign({}, src, {
+        id: "mypost_"+((user&&user.id)||"me")+"_"+i,
+        author: user,
+        time: _myTimes[i % _myTimes.length],
+        flag: _myFlags[i] || null,
+        boardName: BOARD_NAMES[src.board] || "论坛",
+      });
+    });
+  }
+  function repliesFor(user){
+    const off = _seed(user);
+    return Array.from({length:10}, (_,i)=>{
+      const src = _POOL[(off + i*3 + 2) % _POOL.length];
+      const total = Math.min(src.replies||0, 360);
+      const floor = total>1 ? 2 + ((i*7 + off) % (total-1)) : 1;
+      return {
+        id: "myrep_"+((user&&user.id)||"me")+"_"+i,
+        thread: Object.assign({}, src, {flag: _myFlags[i]||null, boardName: BOARD_NAMES[src.board] || "论坛"}),
+        floor,
+        text: _myReplyTexts[i % _myReplyTexts.length],
+        time: _myTimes[i % _myTimes.length],
+      };
+    });
+  }
+
+  // ---- 任意用户对象 -> 完整个人资料（确定性补全）----
+  const _bios = [
+    "潜水很久，偶尔冒泡。喜欢日常系与温柔的故事。",
+    "考据 / 翻译 / 同人文搬运。轻易不冒泡，冒泡必长贴。",
+    "一个安静的读者，以及不太勤快的产粮人。",
+    "喜欢留白与分镜，也喜欢把故事看得很慢很慢。",
+    "日常治愈青年。水星与向日葵都是本命。",
+  ];
+  const _cons = ["白羊座","双子座","巨蟹座","天秤座","射手座","双鱼座"];
+  const _locs = ["北京","上海市","广州","成都","杭州","未填写"];
+  const _regs = ["2017年11月 加入","2019年7月 加入","2020年4月 加入","2021年3月 加入","2023年9月 加入"];
+  function profileFor(user){
+    if(!user) return ME;
+    if(user.id==="me" || user.name===ME.name) return ME;
+    if(user.name===OTHER.name) return OTHER;
+    if(user.stats && user.bio) return user;
+    const h = _seed({id:user.name||"u"});
+    const f = (m)=> h % m;
+    return Object.assign({}, user, {
+      id: user.id || ("u_"+user.name),
+      register: _regs[f(_regs.length)],
+      bio: _bios[f(_bios.length)],
+      gender: "女",
+      constellation: _cons[f(_cons.length)],
+      location: _locs[f(_locs.length)],
+      stats: { themes: 8 + h%420, replies: 60 + (h*3)%3600, collections: 4 + (h*7)%260, follow: h%180, fans: (h*11)%2200 },
+      credits: [
+        {label:"总积分", value:800 + h%9000, max:12000, key:"total"},
+        {label:"金钱", value:500 + (h*3)%7000, max:9000, key:"money"},
+        {label:"贡献", value:80 + (h*5)%1800, max:2500, key:"contrib"},
+        {label:"人气", value:200 + (h*7)%5200, max:7000, key:"pop"},
+      ],
+    });
+  }
+
   const reminders = [
     {id:"r1", type:"reply", icon:"reply", unread:true, who:"灯子的领带", text:"回复了你的主题「摇曳百合 第八季制作决定」", time:"12分钟前"},
     {id:"r2", type:"at", icon:"at", unread:true, who:"comaki", text:"在「孤独摇滚 算百合吗」中 @ 了你", time:"1小时前"},
@@ -369,5 +457,5 @@ window.DATA = (function(){
     {id:"d3", user:users.f, last:"婚后日常那个坑我也想接一棒！", time:"昨天", unread:0},
   ];
 
-  return { ME, OTHER, groups, hot, tags, sortModes, threads, threadsFor, fullListFor, floors, floorsFor, reminders, dms, users };
+  return { ME, OTHER, groups, hot, tags, sortModes, threads, threadsFor, fullListFor, floors, floorsFor, themesFor, repliesFor, profileFor, BOARD_NAMES, reminders, dms, users };
 })();
