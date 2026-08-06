@@ -40,24 +40,10 @@ function cookieHeader() {
   return Array.from(jar.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-// BAIDU_WAF 质询令牌（nox_jst_v1 等）无法由纯 Node 转发获得，需要从真实浏览器
-// 复制注入（POST /__cookie，web 端 WafGate 弹窗引导）。持久化到磁盘，代理重启免重注。
+// BAIDU_WAF 质询令牌（nox_jst_v1 等）无法由纯 Node 转发获得，由 solveWafChallenge()
+// 用 headless Chrome 真实过质询后取得。持久化到磁盘，代理重启免重解。
 const WAF_COOKIE_NAME = /^(nox|acw_tc|cdn_sec_tc)/i;
 const WAF_COOKIE_FILE = path.join(__dirname, '.waf-cookies.json');
-
-function storeWafCookies(raw) {
-  const stored = [];
-  String(raw || '').split(';').forEach((pair) => {
-    const eq = pair.indexOf('=');
-    if (eq < 0) return;
-    const k = pair.slice(0, eq).trim();
-    const v = pair.slice(eq + 1).trim();
-    if (!k || !v || !WAF_COOKIE_NAME.test(k)) return;
-    jar.set(k, v);
-    stored.push(k);
-  });
-  return stored;
-}
 
 function saveWafCookies() {
   const waf = {};
@@ -252,18 +238,6 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   if (req.url === '/__reset') { jar.clear(); loadWafCookies(); res.writeHead(200); res.end('ok'); return; }
-
-  if (req.url === '/__cookie' && req.method === 'POST') {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      const stored = storeWafCookies(Buffer.concat(chunks).toString('utf8'));
-      if (stored.length) saveWafCookies();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ stored }));
-    });
-    return;
-  }
 
   if (req.url.startsWith('/__image?')) {
     const imageUrl = new URL(req.url, 'http://localhost').searchParams.get('url');

@@ -282,8 +282,9 @@ function shouldRetry(err: unknown): boolean {
   return err.code === 'non_json';
 }
 
-// ---- WAF 质询协调：UI 层（WafGate）注册处理器，质询发生时唤起它（原生弹 WebView
-// 过质询 / web 引导注入 cookie），处理器返回 true 后由 request() 自动重试原请求。
+// ---- WAF 质询协调：原生 WafGate 注册处理器，质询发生时用隐藏 WebView 过质询，
+// 处理器返回 true 后由 request() 自动重试原请求。web 端由本地代理自动解质询，
+// 不注册处理器（handler 为 null → resolveWafChallenge 返回 false）。
 type WafChallengeHandler = () => Promise<boolean>;
 let wafChallengeHandler: WafChallengeHandler | null = null;
 let wafResolution: Promise<boolean> | null = null;
