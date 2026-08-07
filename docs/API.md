@@ -243,12 +243,42 @@ deletesubmit=true&formhash=<hash>
 
 成功返回 HTML，正文包含 `操作成功`。`favid` 来自 `myfavthread` 的收藏列表项。
 
-### 3.3 我的主题/回复 — `mythread`
+### 3.3 主题/回复列表 — `home.php?mod=space&do=thread`（HTML）
+
+> **`module=mythread` 在本站不可用。** 它挂在 Discuz 的 guide 功能下，而百合会关掉了该功能：
+> 无论 `view=thread` / `view=reply` / `view=my&type=`，一律返回 `Message.messageval =
+> guide_status_off`；`myreply` / `mypost` / `space` 等模块名则是 `module_not_exists`。
+> 主题与回复列表因此只能解析论坛的 HTML 页。
+
 ```
-GET ?version=4&module=mythread&view=thread   // 我的主题
-GET ?version=4&module=mythread&view=reply    // 我的回复(部分版本 myreply)
+GET /home.php?mod=space&uid=<uid>&do=thread&view=me&type=thread&order=dateline&mobile=no&page=1  // 主题
+GET /home.php?mod=space&uid=<uid>&do=thread&view=me&type=reply&order=dateline&mobile=no&page=1   // 回复
 ```
-返回 `Variables.data[]` / `list[]`、`perpage`（当前账号为空，需用有发帖的账号验证字段）。
+
+> **`mobile=no` 必须带上。** 论坛按会话里的 `mobile` cookie 选模板，而代理的 WAF 预热用
+> `forum.php?mobile=2` 打开页面，会话因此常年停在触屏模板；那套模板只给标题、`pid` 和回复引用，
+> **没有**板块、回复/查看数与时间。钉死 PC 模板，解析才不随会话状态漂移。
+
+带 `uid` 时对**他人同样有效**（隐私/权限受限时返回不含 `id="delform"` 的提示页）。
+列表在 `#delform` 内的表格里：
+
+- **主题**：一行 `<tr>` = 状态图标 / `<th>`标题 / 板块 / 回复·查看 / 最后回复人·时间
+- **回复**：**两行** `<tr>` —— 第一行同上（标题链接指向 `goto=findpost`，`pid` 为空），
+  第二行 `colspan="5"` 里是我的回复正文和带 `pid` 的 findpost 链接。
+  这个 `pid` 即 `targetPid`，配合 §3.x 的 `mod=redirect&goto=findpost` 可定位到具体楼层。
+
+拿得到 / 拿不到：
+
+| | 有 | 无 |
+|---|---|---|
+| 主题 | 标题、tid、板块名+fid、回复数、查看数、状态图标（投票/已关闭/附件） | 摘要、楼主发帖时间（`time` 是**最后回复**时间）、精华 |
+| 回复 | 帖子标题、tid、板块、回复/查看、我的回复正文（论坛已截断）、pid | 楼层号、我的回复时间 |
+
+**分页只有「上一页 / 下一页」，没有总页数**，且每页会因无权限板块被过滤而少于 `perpage=20`
+（线上实测同一用户 17 / 19 / 20 行）。所以「还有没有下一页」**只能**看分页器里的
+`class="nxt"`，按行数判断会在第一页就误判到底 —— 客户端据此走无限滚动而非 `Pager`。
+
+实现见 `src/api.ts` 的 `getUserThreads` / `getUserReplies`。
 
 ---
 
@@ -327,7 +357,7 @@ https://bbs.yamibo.com/data/attachment/forum/<attachment>
 | 5 | 帖子详情 | GET | `module=viewthread&tid=&page=` |
 | 6 | 我的/他人主页 | GET | `module=profile&uid=` |
 | 7 | 我的收藏 | GET | `module=myfavthread&page=` |
-| 8 | 我的主题/回复 | GET | `module=mythread&view=thread|reply` |
+| 8 | 主题/回复列表 | GET | `home.php?mod=space&uid=&do=thread&view=me&type=thread\|reply`（HTML；`mythread` 本站不可用）|
 | 9 | 提醒 | GET | `module=mynotelist&page=` |
 | 10 | 私信会话 | GET | `module=mypm&page=` |
 | 11 | 全局未读 | — | 任意响应 `Variables.notice` |

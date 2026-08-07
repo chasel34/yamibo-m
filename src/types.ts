@@ -283,6 +283,39 @@ export interface ListResult<T> {
   perpage: number;
   totalPages: number;
 }
+// ---- User posts (space HTML; see api.ts getUserThreads/getUserReplies) ----
+// 这两个列表来自论坛 HTML 页而非 mobile API，字段以页面能给出的为准：
+// 没有摘要、没有楼主发帖时间（`time` 是最后回复时间）、回复没有楼层号。
+export interface UserThreadItem {
+  id: string;
+  tid: string;
+  title: string;
+  flag?: string;        // 投票 / 已关闭 —— 页面图标能给出的状态，精华拿不到
+  boardName: string;
+  fid?: string;
+  replies: number;
+  views: number;
+  lastPoster?: string;
+  time: string;         // 最后回复时间
+}
+export interface UserReplyItem {
+  id: string;
+  tid: string;
+  pid?: string;         // 有 pid 才能跳到具体楼层（Thread 的 targetPid）
+  title: string;
+  flag?: string;
+  boardName: string;
+  fid?: string;
+  text: string;         // 我的回复正文（论坛已截断）
+  time: string;         // 最后回复时间
+}
+export type UserPostsTab = 'threads' | 'replies';
+// 游标式分页：space 页只给「有没有下一页」，给不出总页数 → 无限滚动而非 Pager。
+export interface CursorPage<T> {
+  list: T[];
+  page: number;
+  hasMore: boolean;
+}
 export interface Reminder {
   id: string;
   type: string;
@@ -350,6 +383,7 @@ export type RootStackParamList = {
   thread: { thread?: ThreadNavParam; board?: BoardNavParam; tid?: string; targetPid?: string; targetPage?: number } | undefined;
   reader: { tid: string; authorid: string; fresh?: boolean };
   profile: { uid?: string; self?: boolean } | undefined;
+  userposts: { uid?: string; name?: string; self?: boolean; tab?: UserPostsTab; stats?: { themes: number; replies: number } } | undefined;
   settings: undefined;
   collections: undefined;
   history: undefined;

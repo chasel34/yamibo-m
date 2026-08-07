@@ -7,7 +7,7 @@ import { clearSessionCookies, hydrateSessionCookies, persistSessionCookies } fro
 import type {
   Me, Notice, ForumIndexData, BoardData, ThreadData, ThreadImage,
   UserProfile, CollectionItem, ListResult, Reminder, PMItem, ThreadType, BoardSummary, ForumGroup, BoardSub, SortMode, PinnedItem,
-  ReadingStreamPage, ReadingComment,
+  ReadingStreamPage, ReadingComment, UserThreadItem, UserReplyItem, CursorPage,
 } from './types';
 
 export const PROXY = 'http://localhost:8089';
@@ -833,6 +833,212 @@ export async function getSelfProfile(): Promise<{ user: UserProfile }> {
   return { user: { ...user, stats: { ...user.stats, collections } } };
 }
 
+// ===================== User posts (home.php?mod=space&do=thread) =====================
+// 论坛关掉了 Discuz 的 guide 功能：mobile API 的 module=mythread 不论 view/type 一律返回
+// guide_status_off，所以「主题 / 回复」列表只能解析 space 的 HTML 页。该页带 uid 参数对他人
+// 同样有效，自己和别人因此走同一条路径。
+//
+// #delform 内表格的结构：
+//   主题：一行 <tr> = 状态图标 / <th>标题 / 板块 / 回复·查看 / 最后回复人·时间
+//   回复：两行 <tr> —— 第一行同上（标题指向 goto=findpost），第二行 colspan=5 里是我的回复
+//         正文和带 pid 的 findpost 链接；这个 pid 就是 Thread 的 targetPid。
+//
+// 页面只有「上一页 / 下一页」，给不出总页数，且每页会因无权限板块被过滤而少于 perpage
+// （实测同一用户 17 / 19 / 20 行）——所以**只能**按 class="nxt" 判断还有没有下一页，
+// 按行数判断会在第一页就误判到底。
+type SpaceThreadType = 'thread' | 'reply';
+
+function spaceTableRows(html: string): string[] {
+  // 只取 #delform 内的第一张表，避开页面导航/侧栏的其它表格。
+  const start = html.indexOf('id="delform"');
+  const region = start >= 0 ? html.slice(start) : html;
+  const end = region.indexOf('</table>');
+  return (end >= 0 ? region.slice(0, end) : region).match(/<tr[\s\S]*?<\/tr>/g) || [];
+}
+
+function spaceCell(row: string, tag: 'td' | 'th', cls?: string): string {
+  const re = cls
+    ? new RegExp(`<${tag}[^>]*class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)</${tag}>`, 'i')
+    : new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i');
+  const m = row.match(re);
+  return m ? m[1] : '';
+}
+
+// 只保留页面图标真的给得出的状态；设计稿要的「精华」这个模板不渲染，拿不到就不显示。
+const SPACE_FLAGS: Array<[RegExp, string]> = [
+  [/fico-digest/i, '精华'],
+  [/fico-vote|fico-poll/i, '投票'],
+  [/fico-lock/i, '已关闭'],
+];
+
+function spaceFlag(icnCell: string, titleCell: string): string | undefined {
+  for (const [re, label] of SPACE_FLAGS) if (re.test(icnCell)) return label;
+  return /已关闭|已關閉/.test(titleCell) ? '已关闭' : undefined;
+}
+
+// 行内所有链接都是 &amp; 转义的，所以用 \b 而不是 [?&] 定位查询参数。
+// `\bp?tid=` 能同时吃下 tid= 与 ptid=（"ptid" 里没有 "tid" 的词边界，不会误截）。
+function spaceTid(row: string): string {
+  const m = row.match(/\bp?tid=(\d+)/) || row.match(/thread-(\d+)-/);
+  return m ? m[1] : '';
+}
+
+interface SpaceRowBase {
+  tid: string;
+  title: string;
+  flag?: string;
+  boardName: string;
+  fid?: string;
+  replies: number;
+  views: number;
+  lastPoster?: string;
+  time: string;
+}
+
+function parseSpaceRow(row: string): SpaceRowBase | null {
+  const icn = spaceCell(row, 'td', 'icn');
+  const titleCell = spaceCell(row, 'th');
+  if (!titleCell) return null;
+  const tid = spaceTid(row);
+  if (!tid) return null;
+  // <th> 里第一个 <a> 是标题；其后的 <span class="tps"> 是分页快捷链接。
+  const titleM = titleCell.match(/<a\b[^>]*>([\s\S]*?)<\/a>/i);
+  const title = stripHtml(titleM ? titleM[1] : '');
+  if (!title) return null;
+
+  const boardM = row.match(/<a\b[^>]*href="forum-(\d+)-1\.html"[^>]*>([\s\S]*?)<\/a>/i);
+  const num = spaceCell(row, 'td', 'num');
+  const by = spaceCell(row, 'td', 'by');
+  const byName = by.match(/<cite>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i);
+  const byTime = by.match(/<em>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>/i) || by.match(/<em>([\s\S]*?)<\/em>/i);
+
+  return {
+    tid,
+    title,
+    flag: spaceFlag(icn, titleCell),
+    boardName: stripHtml(boardM ? boardM[2] : '') || '论坛',
+    fid: boardM ? boardM[1] : undefined,
+    replies: asInt((num.match(/<a\b[^>]*>\s*(\d+)\s*<\/a>/i) || [])[1]),
+    views: asInt((num.match(/<em>\s*(\d+)\s*<\/em>/i) || [])[1]),
+    lastPoster: stripHtml(byName ? byName[1] : '') || undefined,
+    time: stripHtml(byTime ? byTime[1] : ''),
+  };
+}
+
+// 回复正文行：colspan=5，正文包在一个带 pid 的 findpost 链接里。
+// 空列表页也是 colspan=5（<p class="emp">），没有 pid 就不是正文行。
+function parseSpaceReplyBody(row: string): { pid: string; text: string } | null {
+  if (!/colspan="?5"?/i.test(row)) return null;
+  const m = row.match(/<a\b[^>]*\bpid=(\d+)[^>]*>([\s\S]*?)<\/a>/i);
+  if (!m) return null;
+  // 论坛自己截断长回复并补 " ..."（**带前导空格**），换成省略号；收成单段以配合列表里的引用块。
+  // 必须要求那个空格：正文本身就是「......」的回复（表情/图片楼很常见）不能被当成截断标记。
+  const text = stripHtml(m[2]).replace(/\s+/g, ' ').replace(/\s\.\.\.$/, '…').trim();
+  return { pid: m[1], text };
+}
+
+function spaceHasMore(html: string): boolean {
+  return /class="nxt"/i.test(html);
+}
+
+function parseUserThreads(html: string, page: number): CursorPage<UserThreadItem> {
+  const list: UserThreadItem[] = [];
+  for (const row of spaceTableRows(html)) {
+    if (/class="th"/i.test(row)) continue;
+    const base = parseSpaceRow(row);
+    if (base) list.push({ id: base.tid, ...base });
+  }
+  return { list, page, hasMore: spaceHasMore(html) };
+}
+
+function parseUserReplies(html: string, page: number): CursorPage<UserReplyItem> {
+  const list: UserReplyItem[] = [];
+  // 正文行必须紧跟它自己的主题行，否则宁可丢掉也不能挂到别的帖子上。
+  let awaiting: UserReplyItem | null = null;
+  for (const row of spaceTableRows(html)) {
+    if (/class="th"/i.test(row)) continue;
+    const body = parseSpaceReplyBody(row);
+    if (body) {
+      if (awaiting) { awaiting.pid = body.pid; awaiting.id = body.pid; awaiting.text = body.text; }
+      awaiting = null;
+      continue;
+    }
+    const base = parseSpaceRow(row);
+    awaiting = base ? {
+      id: base.tid, tid: base.tid, title: base.title, flag: base.flag,
+      boardName: base.boardName, fid: base.fid, text: '', time: base.time,
+    } : null;
+    if (awaiting) list.push(awaiting);
+  }
+  return { list, page, hasMore: spaceHasMore(html) };
+}
+
+function spacePageError(html: string, module: string): ApiError | null {
+  // 有 #delform 就是正常的列表页——哪怕列表是空的（<p class="emp">还没有相关的帖子</p>）。
+  if (/id="delform"/.test(html)) return null;
+  const bodySnippet = snippet(html);
+  if (looksNoxChallenge(200, html)) {
+    return new ApiError('waf_challenge', '站点开启了安全验证，请稍后重试', { module, snippet: bodySnippet });
+  }
+  if (/请先登录|登录后才能|尚未登录|未登录/.test(html)) {
+    return new ApiError('auth_expired', '登录状态已失效，请重新登录后再试', { module, snippet: bodySnippet });
+  }
+  if (/没有权限|沒有權限|权限不足|抱歉/.test(html)) {
+    return new ApiError('business', '这位同好的帖子列表不公开', { module, snippet: bodySnippet });
+  }
+  return new ApiError('business', '暂时打不开这个列表，请稍后重试', { module, snippet: bodySnippet });
+}
+
+async function fetchSpaceThreadPage(uid: string, type: SpaceThreadType, page: number): Promise<string> {
+  const module = type === 'thread' ? 'space_thread' : 'space_reply';
+  if (!uid) throw new ApiError('business', '缺少用户信息，无法加载列表', { module });
+  try { await hydrateSessionCookies(); } catch (e) {}
+  // mobile=no 是**必需**的：论坛按会话里的 `mobile` cookie 决定模板，而代理的 WAF 预热是用
+  // `forum.php?mobile=2` 打开的，会话因此常年停在触屏模板——那套模板只有标题、pid 和回复引用，
+  // 没有板块、回复/查看数和时间。显式钉死 PC 模板，解析才不受会话状态摆布。
+  const url = `${Platform.OS === 'web' ? PROXY : HOST}/home.php?mod=space&uid=${encodeURIComponent(uid)}`
+    + `&do=thread&view=me&type=${type}&order=dateline&mobile=no&page=${page}`;
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url, {
+      headers: { Accept: 'text/html,*/*' },
+      credentials: Platform.OS === 'web' ? 'omit' : undefined,   // proxy owns the jar
+    } as RequestInit, HTML_TIMEOUT_MS);
+  } catch (e) {
+    throw apiNetworkError(module, isTimeoutError(e));
+  }
+  const text = await res.text();
+  if (looksNoxChallenge(res.status, text)) {
+    throw new ApiError('waf_challenge', '站点开启了安全验证，请稍后重试', { module, status: res.status, snippet: snippet(text) });
+  }
+  if (!res.ok) {
+    throw new ApiError('http', `服务器暂时不可用（${res.status}），请稍后重试`, { module, status: res.status, snippet: snippet(text) });
+  }
+  const pageError = spacePageError(text, module);
+  if (pageError) throw pageError;
+  return text;
+}
+
+// 质询被 WAF 拦下时请求从未到达 Discuz，过质询后重试一次（与 request() 同策略）。
+async function spaceThreadHtml(uid: string, type: SpaceThreadType, page: number): Promise<string> {
+  try {
+    return await fetchSpaceThreadPage(uid, type, page);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'waf_challenge' && await resolveWafChallenge()) {
+      return fetchSpaceThreadPage(uid, type, page);
+    }
+    throw e;
+  }
+}
+
+export async function getUserThreads(uid: string, page = 1): Promise<CursorPage<UserThreadItem>> {
+  return parseUserThreads(await spaceThreadHtml(uid, 'thread', page), page);
+}
+
+export async function getUserReplies(uid: string, page = 1): Promise<CursorPage<UserReplyItem>> {
+  return parseUserReplies(await spaceThreadHtml(uid, 'reply', page), page);
+}
+
 // ===================== Reminders (mynotelist) =====================
 const NOTE_LABEL: Record<string, string> = { system: '系统通知', post: '回复提醒', pcomment: '点评提醒', at: '@ 提醒', friend: '好友', follow: '关注', card: '系统通知' };
 const NOTE_ICON: Record<string, string> = { system: 'info', post: 'reply', pcomment: 'reply', at: 'at', friend: 'users', follow: 'users' };
@@ -879,6 +1085,9 @@ export const __private = {
   mapReminders,
   mapPMs,
   paginationFor,
+  parseUserThreads,
+  parseUserReplies,
+  spacePageError,
   FAVORITE_LOOKUP_PAGE_LIMIT,
   rememberFavoritePage,
   rememberFavoriteState,

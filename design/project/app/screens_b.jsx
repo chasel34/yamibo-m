@@ -14,13 +14,15 @@ const FloorBlock = ({b, onImg}) => {
   return null;
 };
 
-const Floor = ({f, onImg, idx}) => (
+const Floor = ({f, onImg, idx}) => {
+  const nav = window.useNav();
+  return (
   <div className="fade-up" style={{padding:"20px 22px 6px", animationDelay:(idx*40)+"ms"}}>
     <div className="row" style={{gap:11, marginBottom:14}}>
-      <Av user={f.user} size={36}/>
+      <span className="click" style={{display:"flex", flex:"0 0 auto"}} onClick={(e)=>window.openProfile(nav, f.user, e)}><Av user={f.user} size={36}/></span>
       <div style={{flex:1, minWidth:0}}>
         <div className="row" style={{gap:8}}>
-          <span style={{fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:600, color:"var(--ink)"}}>{f.user.name}</span>
+          <span className="click" onClick={(e)=>window.openProfile(nav, f.user, e)} style={{fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:600, color:"var(--ink)"}}>{f.user.name}</span>
           {f.op && <span style={{fontFamily:"var(--font-head)", fontSize:11, fontWeight:700, color:"var(--accent-ink)"}}>楼主</span>}
         </div>
         <div className="timestamp" style={{fontSize:12, marginTop:2}}>{f.time}</div>
@@ -35,7 +37,8 @@ const Floor = ({f, onImg, idx}) => (
       <span className="row timestamp click" style={{gap:6}}><Ic name="reply" size={16}/>回复</span>
     </div>}
   </div>
-);
+  );
+};
 
 // ===================== Thread detail =====================
 // reading-mode entry card (shown on novel-type threads)
@@ -125,24 +128,31 @@ const FloorJump = ({onLocate}) => {
 };
 
 const PER_FLOOR = 10;
-const ThreadScreen = ({thread, board}) => {
+const ThreadScreen = ({thread, board, jumpFloor, myReply}) => {
   const nav = window.useNav();
   const D = window.DATA;
   const [fav, setFav] = React.useState(false);
   const isNovel = !!(thread.novelId && window.BOOKS && window.BOOKS.get(thread.novelId));
-  const all = React.useMemo(()=> D.floorsFor(thread), [thread]);   // all[0] = 1楼(楼主)
+  const all = React.useMemo(()=>{
+    const arr = D.floorsFor(thread);
+    if(myReply && arr[myReply.floor-1]){
+      arr[myReply.floor-1] = {...arr[myReply.floor-1], op:false, user:myReply.user, time:myReply.time, blocks:[{t:"text", v:myReply.text}]};
+    }
+    return arr;
+  }, [thread, myReply]);   // all[0] = 1楼(楼主)
   const totalFloors = all.length;
   const [opOnly, setOpOnly] = React.useState(false);              // 只看楼主
   const opCount = React.useMemo(()=> all.filter(f=>f.op).length, [all]);
   const source = React.useMemo(()=> opOnly ? all.filter(f=>f.op) : all, [all, opOnly]);
   const totalPages = Math.max(1, Math.ceil(source.length/PER_FLOOR));
-  const [page, setPage] = React.useState(1);
+  const [page, setPage] = React.useState(()=> jumpFloor ? Math.ceil(jumpFloor/PER_FLOOR) : 1);
   const pageC = Math.min(page, totalPages);
   const scRef = React.useRef(null);
-  const pending = React.useRef(null);
+  const pending = React.useRef(jumpFloor || null);
   const [flash, setFlash] = React.useState(null);
+  const first = React.useRef(true);
 
-  React.useEffect(()=>{ setPage(1); }, [opOnly]);
+  React.useEffect(()=>{ if(first.current){ first.current=false; return; } setPage(1); }, [opOnly]);
 
   const startIdx = (pageC-1)*PER_FLOOR;
   const pageFloors = source.slice(startIdx, startIdx+PER_FLOOR);   // 本页楼层
@@ -203,10 +213,10 @@ const ThreadScreen = ({thread, board}) => {
           <div className="kicker" style={{marginBottom:14}}>{board ? board.name : "帖子"}{thread.pinned ? "  ·  置顶" : ""}{totalPages>1 ? "  ·  第 "+pageC+"/"+totalPages+" 页" : ""}</div>
           <div className="headline" style={{fontSize:26, lineHeight:1.34, marginBottom:20}}>{thread.title}</div>
           <div className="row" style={{gap:11}}>
-            <Av user={thread.author} size={38}/>
+            <span className="click" style={{display:"flex", flex:"0 0 auto"}} onClick={(e)=>window.openProfile(nav, thread.author, e)}><Av user={thread.author} size={38}/></span>
             <div style={{flex:1}}>
               <div className="row" style={{gap:8}}>
-                <span style={{fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:600, color:"var(--ink)"}}>{thread.author.name}</span>
+                <span className="click" onClick={(e)=>window.openProfile(nav, thread.author, e)} style={{fontFamily:"var(--font-head)", fontSize:14.5, fontWeight:600, color:"var(--ink)"}}>{thread.author.name}</span>
                 <span style={{fontFamily:"var(--font-head)", fontSize:11, fontWeight:700, color:"var(--accent-ink)"}}>楼主</span>
               </div>
               <div className="timestamp" style={{fontSize:12, marginTop:2}}>{thread.author.group} · {thread.time}</div>
@@ -307,11 +317,9 @@ const ProfileScreen = ({user, self}) => {
         </div>
         {/* stats row */}
         <div className="row" style={{padding:"22px 16px 22px"}}>
-          <StatCell n={u.stats.themes} label="主题"/>
-          <StatCell n={u.stats.replies} label="回复"/>
+          <StatCell n={u.stats.themes} label="主题" onClick={()=>nav.push("userposts",{user:u, self, tab:"themes"})}/>
+          <StatCell n={u.stats.replies} label="回复" onClick={()=>nav.push("userposts",{user:u, self, tab:"replies"})}/>
           <StatCell n={u.stats.collections} label="收藏" onClick={self?()=>nav.push("collections",{}):null}/>
-          <StatCell n={u.stats.follow} label="关注"/>
-          <StatCell n={u.stats.fans} label="粉丝"/>
         </div>
         <div className="feed-div"></div>
         {/* meta list */}
@@ -321,14 +329,6 @@ const ProfileScreen = ({user, self}) => {
         <div className="feed-div" style={{margin:"0 22px"}}></div>
         <InfoRow label="所在地" v={u.location}/>
         <div className="feed-div"></div>
-        {/* actions */}
-        {self ? null : (
-          <div className="row" style={{gap:12, padding:"22px 22px 0"}}>
-            <button className="btn-primary disabled" style={{flex:1}}>关注</button>
-            <button className="btn-primary disabled" style={{flex:1, background:"var(--card-2)", color:"var(--ink-soft)"}}>私信</button>
-          </div>
-        )}
-        {!self && <div className="serif" style={{textAlign:"center", fontSize:12, color:"var(--faint)", padding:"14px 0 0"}}>v1 暂未开放关注 / 私信</div>}
         <div style={{height:30}}></div>
       </div>
     </>

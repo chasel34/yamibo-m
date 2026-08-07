@@ -45,6 +45,7 @@ const SCREENS = {
   mine:    (p)=> <window.MineScreen {...p}/>,
   settings:(p)=> <window.SettingsScreen {...p}/>,
   collections:(p)=> <window.CollectionsScreen {...p}/>,
+  userposts:(p)=> <window.UserPostsScreen {...p}/>,
   history: (p)=> <window.HistoryScreen {...p}/>,
   about:   (p)=> <window.AboutScreen {...p}/>,
   reader:  (p)=> <window.Reader {...p}/>,

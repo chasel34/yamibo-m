@@ -29,6 +29,7 @@ import MessagesScreen from './src/screens/Messages';
 import MineScreen from './src/screens/Mine';
 import SettingsScreen from './src/screens/Settings';
 import CollectionsScreen from './src/screens/Collections';
+import UserPostsScreen from './src/screens/UserPosts';
 import HistoryScreen from './src/screens/History';
 import AboutScreen from './src/screens/About';
 
@@ -78,6 +79,7 @@ function RootNavigator() {
             <RootStack.Screen name="profile" component={ProfileScreen} />
             <RootStack.Screen name="settings" component={SettingsScreen} />
             <RootStack.Screen name="collections" component={CollectionsScreen} />
+            <RootStack.Screen name="userposts" component={UserPostsScreen} />
             <RootStack.Screen name="history" component={HistoryScreen} />
             <RootStack.Screen name="about" component={AboutScreen} />
             <RootStack.Screen name="viewer" component={ImageViewerScreen} options={{ presentation: 'transparentModal', animation: 'fade' }} />

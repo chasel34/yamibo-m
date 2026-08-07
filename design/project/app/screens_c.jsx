@@ -45,7 +45,7 @@ const MessagesScreen = () => {
         D.dms.map((d, i) =>
         <React.Fragment key={d.id}>
                 <div className="flatrow fade-up" style={{ animationDelay: i * 35 + "ms" }} onClick={() => nav.toast("会话：敬请期待")}>
-                  <Av3 user={d.user} size={46} />
+                  <span className="click" style={{ display: "flex", flex: "0 0 auto" }} onClick={(e) => window.openProfile(nav, d.user, e)}><Av3 user={d.user} size={46} /></span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="row" style={{ gap: 6, marginBottom: 5 }}>
                       <span style={{ fontFamily: "var(--font-head)", fontSize: 15, fontWeight: 600, color: "var(--ink)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.user.name}</span>
@@ -97,19 +97,10 @@ const MineScreen = () => {
           </div>
           <I3 name="chevRight" size={20} style={{ color: "var(--faint)" }} />
         </div>
-        {/* stats */}
-        <div className="row" style={{ padding: "6px 16px 20px" }}>
-          {[["收藏", me.stats.collections], ["主题", me.stats.themes], ["回复", me.stats.replies], ["关注", me.stats.follow]].map(([l, n], i) =>
-          <div key={i} style={{ flex: 1, textAlign: "center" }}>
-              <div className="headline" style={{ fontSize: 18 }}>{n}</div>
-              <div className="timestamp" style={{ fontSize: 11.5, marginTop: 3 }}>{l}</div>
-            </div>
-          )}
-        </div>
-        <div className="feed-div"></div>
+        <div className="feed-div" style={{ marginTop: 6 }}></div>
         <MRow icon="bookmark" label="我的收藏" sub={me.stats.collections + " 篇"} onClick={() => nav.push("collections", {})} />
         <div className="feed-div" style={{ margin: "0 22px 0 56px" }}></div>
-        <MRow icon="doc" label="我的发帖" sub={me.stats.themes + " 篇"} onClick={() => nav.toast("我的发帖")} />
+        <MRow icon="doc" label="我的发帖" sub={me.stats.themes + " 篇"} onClick={() => nav.push("userposts", { user: me, self: true, tab: "themes" })} />
         <div className="feed-div" style={{ margin: "0 22px 0 56px" }}></div>
         <MRow icon="history" label="浏览历史" onClick={() => nav.push("history", {})} />
         <div className="feed-div"></div>
