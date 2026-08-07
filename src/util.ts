@@ -9,10 +9,15 @@ export function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-// ---- avatar (§5.1). avatar.php follows the redirect to the real/default image. ----
+// ---- avatar (§5.1). 直接拼 UCenter 的静态头像路径，不走 avatar.php：
+// 论坛的 BAIDU_WAF 对 uc_server/avatar.php 一律回 405 + JS 质询页（不是图片），
+// 静态 jpg 则正常 200。没设头像的用户这里会 404，Avatar 组件自动退回字母占位。
+// UCenter 规则：uid 左补零到 9 位 → data/avatar/{0-3}/{3-5}/{5-7}/{末两位}_avatar_{size}.jpg
 export function avatarUrl(uid?: string | null, size = 'middle'): string | null {
-  if (!uid || uid === '0') return null;
-  return `${HOST}/uc_server/avatar.php?uid=${uid}&size=${size}`;
+  const n = Math.abs(parseInt(String(uid ?? ''), 10));
+  if (!n || !Number.isFinite(n)) return null;
+  const p = String(n).padStart(9, '0');
+  return `${HOST}/uc_server/data/avatar/${p.slice(0, 3)}/${p.slice(3, 5)}/${p.slice(5, 7)}/${p.slice(7)}_avatar_${size}.jpg`;
 }
 
 // ---- absolute-ize a possibly-relative forum URL ----

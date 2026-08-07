@@ -292,6 +292,9 @@ https://bbs.yamibo.com/uc_server/data/avatar/000/12/34/56_avatar_<size>.jpg
 ```
 > `member_avatar` 字段已给出当前用户头像 URL，可直接用；他人按上式拼接。
 > `avatarstatus=0` 时用默认头像占位。
+> **不要走 `uc_server/avatar.php?uid=…`**：BAIDU_WAF 对该入口一律回 `405` + JS 质询 HTML，
+> 不是图片。静态路径正常（首次会有一次 CDN 302 种 cookie 的自跳转，浏览器/原生自动处理）；
+> 未设头像的 uid 直接 404，由 `Avatar` 组件退回字母占位。
 
 ### 5.2 帖子图片附件
 `forum_threadlist[].attachmentImagePreviewList[].attachment` 或楼层附件的 `attachment` 字段
