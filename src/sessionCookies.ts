@@ -176,6 +176,26 @@ async function readNativeCookies(cookiepre: string): Promise<StoredCookie[]> {
   }
 }
 
+// 原生 cookie store 里当前属于论坛的全部 cookie，拼成 `Cookie:` 请求头的形式。
+// 给的是**所有** cookie（不走 isAllowedCookieName 白名单）：WAF 的 abymg_id 和会话态一起带上，
+// 权限受限的附件图才拿得到。调用方只允许对论坛自己的 URL 用，见 src/imageCookies.ts。
+export async function readForumCookieHeader(): Promise<string> {
+  const CookieManager = getCookieManager();
+  if (!CookieManager || typeof (CookieManager as any).get !== 'function') return '';
+  try {
+    const raw = await (CookieManager as any).get(COOKIE_URL);
+    if (!isRecord(raw)) return '';
+    return Object.keys(raw).map((key) => {
+      const entry = raw[key];
+      const name = String((isRecord(entry) && entry.name) || key).trim();
+      const value = isRecord(entry) ? String(entry.value ?? '') : String(entry ?? '');
+      return name && value ? `${name}=${value}` : '';
+    }).filter(Boolean).join('; ');
+  } catch (e) {
+    return '';
+  }
+}
+
 async function writeNativeCookies(session: StoredDiscuzSession): Promise<void> {
   const CookieManager = getCookieManager();
   if (!CookieManager) return;
