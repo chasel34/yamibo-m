@@ -11,6 +11,7 @@ import { READER_THEMES, getViewerHinted, markViewerHinted } from '../reading';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { displayImageUrl } from '../api';
+import { forumImageHeaders } from '../imageCookies';
 import { clamp } from '../util';
 
 // 固定纸白 chrome（贴合阅读模式默认外观，不跟随/切换主题），与 Reader.tsx 的 chrome 同源。
@@ -81,7 +82,7 @@ export default function ImageViewerScreen({ route }: NativeStackScreenProps<Root
       if (k < 0 || k >= n) continue;
       const src = images[k] && images[k].src;
       const url = displayImageUrl(src) || src;
-      if (url) ExpoImage.prefetch(url, { cachePolicy: 'memory-disk' });
+      if (url) forumImageHeaders(url).then((headers) => ExpoImage.prefetch(url, { cachePolicy: 'memory-disk', headers }));
     }
   }, [images, n]);
 

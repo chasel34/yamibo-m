@@ -4,6 +4,7 @@
 import { Platform } from 'react-native';
 import { avatarUrl, stripHtml, excerptText, groupTitleText, timeFromUnix, parseMessage, HOST } from './util';
 import { clearSessionCookies, hydrateSessionCookies, persistSessionCookies } from './sessionCookies';
+import { refreshForumCookieHeader, resetForumCookieHeader } from './imageCookies';
 import type {
   Me, Notice, ForumIndexData, BoardData, ThreadData, ThreadImage,
   UserProfile, CollectionItem, ListResult, Reminder, PMItem, ThreadType, BoardSummary, ForumGroup, BoardSub, SortMode, PinnedItem,
@@ -297,7 +298,11 @@ export function setWafChallengeHandler(handler: WafChallengeHandler | null): voi
 function resolveWafChallenge(): Promise<boolean> {
   if (!wafChallengeHandler) return Promise.resolve(false);
   if (!wafResolution) {
-    wafResolution = wafChallengeHandler().catch(() => false);
+    // 过完质询 cookie store 里多了 nox_*，图片请求头要跟着换一份（见 src/imageCookies.ts）。
+    wafResolution = wafChallengeHandler().catch(() => false).then(async (ok) => {
+      if (ok) await refreshForumCookieHeader();
+      return ok;
+    });
     wafResolution.finally(() => { wafResolution = null; });
   }
   return wafResolution;
@@ -388,6 +393,7 @@ export async function login(username: string, password: string): Promise<{ ok: b
   }).toString();
   const r = await request('login', { loginsubmit: 'yes', loginfield: 'username' }, { method: 'POST', body });
   const ok = r.Message?.messageval === 'login_succeed';
+  if (ok) await refreshForumCookieHeader();
   return { ok, message: r.Message?.messagestr || '', user: ok ? me : null };
 }
 
@@ -399,6 +405,7 @@ export async function logout(): Promise<void> {
   } catch (e) { /* ignore */ }
   if (Platform.OS === 'web') { try { await fetch(`${PROXY}/__reset`); } catch (e) {} }
   else { try { await clearSessionCookies(); } catch (e) {} }
+  resetForumCookieHeader();
   me = { uid: '0', username: '', avatar: null };
 }
 
