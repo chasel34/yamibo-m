@@ -11,6 +11,7 @@ EAS Update、构建通道、OTA 发布与验证流程见 @docs/EAS_UPDATE.md。
 
 - `npm run typecheck` —— `tsc --noEmit`，类型门禁。Metro/Babel 打包**不做类型检查**，改完必须单独跑。
 - Web 验证需**同时开两个进程**：`npm run proxy`（:8089）+ `npm run web`（:8085）。Android 用 `npm run android`，原生直连、无需代理。
+- dev client **本地打包**：`npm run build:dev`（= `APP_VARIANT=development expo run:android --no-bundler`，装到已启动模拟器/已连真机）。仅原生依赖/patches/app.config.js 变化才需重打，纯 JS 改动跑 Metro 即可；改动原生配置后先删 `android/`（prebuild 生成物）再打。release 不走本地：`v*` tag 触发 CI 用 EAS 云构建。
 
 ## Web vs native
 
