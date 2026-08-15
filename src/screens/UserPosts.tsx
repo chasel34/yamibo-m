@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Pressable, FlatList, RefreshControl } from 'react-native';
+import { View, Text, Pressable, RefreshControl } from 'react-native';
+import { LegendList } from '@legendapp/list/react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
 import { NavHeader, TagPill, Avatar, Divider, HLine } from '../components/ui';
@@ -24,6 +25,8 @@ interface ListState<T> {
   error: string | null;
 }
 const INITIAL: ListState<any> = { items: [], page: 0, hasMore: true, status: 'idle', error: null };
+
+function RowSeparator() { return <Divider />; }
 
 function MetaBit({ icon, v }: { icon: string; v: number }) {
   const { t } = useTheme();
@@ -207,11 +210,13 @@ export default function UserPostsScreen({ route }: NativeStackScreenProps<RootSt
             sub={self ? '去论坛逛逛吧' : '这位同好还没有留下痕迹'}
           />
         ) : (
-          <FlatList
+          <LegendList
             data={data.items}
+            dataKey={tab}
             keyExtractor={(item) => item.id}
+            recycleItems={false}
             renderItem={renderItem}
-            ItemSeparatorComponent={Divider}
+            ItemSeparatorComponent={RowSeparator}
             ListFooterComponent={footer}
             onEndReached={() => fetchTab(tab, 'more')}
             onEndReachedThreshold={0.5}

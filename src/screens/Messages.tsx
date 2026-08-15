@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, Pressable, RefreshControl } from 'react-native';
+import { LegendList } from '@legendapp/list/react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
 import { Avatar, IconBtn, Divider, Pager } from '../components/ui';
@@ -141,30 +142,38 @@ export default function MessagesScreen() {
       {activeError ? <ErrorView message={activeError} onRetry={refresh} />
         : loadingThis ? <Loader label="加载…" />
         : (
-          <ScrollView
+          <LegendList
+            data={(seg === 'remind' ? reminders! : dms!) as (Reminder | PMItem)[]}
+            dataKey={seg}
+            keyExtractor={(item) => item.id}
+            recycleItems={false}
+            renderItem={({ item, index }) => {
+              const list = seg === 'remind' ? reminders! : dms!;
+              return seg === 'remind'
+                ? <ReminderRow r={item as Reminder} onPress={onRowPress} showDivider={index < list.length - 1} />
+                : <DmRow d={item as PMItem} onPress={onRowPress} showDivider={index < list.length - 1} />;
+            }}
+            extraData={paging}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing === seg} onRefresh={refresh} tintColor={t.accent} colors={[t.accent]} />}
-          >
-            {seg === 'remind' ? (
-              reminders!.length === 0 ? <EmptyState label="还没有提醒" sub="有人找你时会出现在这里" /> : reminders!.map((r, i) => (
-                <ReminderRow key={r.id} r={r} onPress={onRowPress} showDivider={i < reminders!.length - 1} />
-              ))
-            ) : (
-              dms!.length === 0 ? <EmptyState label="还没有私信" sub="安安静静，等一朵花开" /> : dms!.map((d, i) => (
-                <DmRow key={d.id} d={d} onPress={onRowPress} showDivider={i < dms!.length - 1} />
-              ))
+            ListEmptyComponent={seg === 'remind'
+              ? <EmptyState label="还没有提醒" sub="有人找你时会出现在这里" />
+              : <EmptyState label="还没有私信" sub="安安静静，等一朵花开" />}
+            ListFooterComponent={(
+              <View>
+                {active ? (
+                  <Pager
+                    page={active.page}
+                    totalPages={active.totalPages}
+                    onJump={goPage}
+                    cap={`—  共 ${active.count} 条  —`}
+                    extra={paging === seg ? <Text style={{ fontFamily: FONTS.body, fontSize: 12, color: t.faint }}>加载中…</Text> : null}
+                  />
+                ) : null}
+                <View style={{ height: 20 }} />
+              </View>
             )}
-            {active ? (
-              <Pager
-                page={active.page}
-                totalPages={active.totalPages}
-                onJump={goPage}
-                cap={`—  共 ${active.count} 条  —`}
-                extra={paging === seg ? <Text style={{ fontFamily: FONTS.body, fontSize: 12, color: t.faint }}>加载中…</Text> : null}
-              />
-            ) : null}
-            <View style={{ height: 20 }} />
-          </ScrollView>
+            refreshControl={<RefreshControl refreshing={refreshing === seg} onRefresh={refresh} tintColor={t.accent} colors={[t.accent]} />}
+          />
         )}
     </Screen>
   );

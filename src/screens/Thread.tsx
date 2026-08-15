@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView, FlatList, TextInput, Linking } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Linking } from 'react-native';
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import { StackActions } from '@react-navigation/native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
@@ -217,7 +218,7 @@ function routeTid(route: any): string {
   return String(route?.params?.tid || route?.params?.thread?.tid || route?.params?.thread?.id || '');
 }
 
-// FlatList 行模型：楼主正文 / 回复分界 / 空态 / 回复楼层各占一行。此前整页塞在一个
+// 列表行模型：楼主正文 / 回复分界 / 空态 / 回复楼层各占一行。此前整页塞在一个
 // ScrollView 里，一页 20 楼的原图（贴图帖普遍 2000px+）全部同时挂载解码，低端安卓滚动
 // 掉帧严重；按楼层虚拟化后只挂载视口附近的楼层/图片。
 type ListRow =
@@ -251,7 +252,7 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
   const [favoriteId, setFavoriteId] = React.useState<string | undefined>(undefined);
   const [favoriteBusy, setFavoriteBusy] = React.useState(false);
   const [flash, setFlash] = React.useState<number | null>(null);
-  const listRef = React.useRef<FlatList<ListRow>>(null);
+  const listRef = React.useRef<LegendListRef>(null);
   const pending = React.useRef<number | null>(null);
   const targetHandled = React.useRef(false);
   const targetLoadPage = React.useRef<number | null>(null);
@@ -360,11 +361,6 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
     setTimeout(() => { run(); setFlash(f); }, 40);
     if (!smooth) setTimeout(run, 220);
     setTimeout(() => setFlash(null), 1900);
-  };
-  // 目标楼层还未被虚拟化列表挂载时 scrollToIndex 会失败：先按均值跳到附近让它渲染，再精确定位。
-  const onScrollToIndexFailed = (info: { index: number; averageItemLength: number }) => {
-    listRef.current?.scrollToOffset({ offset: Math.max(0, info.index * info.averageItemLength - 54), animated: false });
-    setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, viewOffset: 54, animated: false }), 160);
   };
   const locate = (f: number) => {
     const total = (data?.thread.replies || 0) + 1;
@@ -549,11 +545,12 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
       {error ? <ErrorView message={error} onRetry={load} />
         : !data ? <Loader label="加载帖子…" />
         : (
-          <FlatList
+          <LegendList
             ref={listRef}
             data={rows}
             renderItem={renderRow}
             keyExtractor={(item) => item.key}
+            recycleItems={false}
             ItemSeparatorComponent={FloorSeparator}
             ListHeaderComponent={header}
             ListFooterComponent={(
@@ -574,11 +571,6 @@ export default function ThreadScreen({ route, navigation }: NativeStackScreenPro
             extraData={flash}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 8 }}
-            initialNumToRender={5}
-            maxToRenderPerBatch={4}
-            updateCellsBatchingPeriod={40}
-            windowSize={7}
-            onScrollToIndexFailed={onScrollToIndexFailed}
           />
         )}
 

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, ScrollView, RefreshControl } from 'react-native';
+import { Text, RefreshControl } from 'react-native';
+import { LegendList } from '@legendapp/list/react-native';
 import Screen from '../components/Screen';
 import { NavHeader, FeedItem, Divider, Pager } from '../components/ui';
 import type { FeedThread } from '../components/ui';
@@ -8,6 +9,8 @@ import { useNav } from '../useNav';
 import { useTheme, FONTS } from '../theme';
 import { getCollections } from '../api';
 import type { CollectionItem, ListResult } from '../types';
+
+function RowSeparator() { return <Divider />; }
 
 export default function CollectionsScreen() {
   const nav = useNav();
@@ -56,24 +59,24 @@ export default function CollectionsScreen() {
         : !data ? <Loader label="加载收藏…" />
         : data.list.length === 0 ? <EmptyState label="还没有收藏" sub="看到喜欢的帖子，点 ♡ 收藏" />
         : (
-          <ScrollView
+          <LegendList
+            data={data.list}
+            keyExtractor={(th) => th.id}
+            renderItem={({ item }) => <FeedItem t={item} onOpen={openThread} />}
+            recycleItems={false}
+            ItemSeparatorComponent={RowSeparator}
             showsVerticalScrollIndicator={false}
+            ListFooterComponent={(
+              <Pager
+                page={data.page}
+                totalPages={data.totalPages}
+                onJump={goPage}
+                cap={`—  共 ${data.count} 篇收藏  —`}
+                extra={paging ? <Text style={{ fontFamily: FONTS.body, fontSize: 12, color: t.faint }}>加载中…</Text> : null}
+              />
+            )}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(1, true)} tintColor={t.accent} colors={[t.accent]} />}
-          >
-            {data.list.map((th, i) => (
-              <View key={th.id}>
-                <FeedItem t={th} onOpen={openThread} />
-                {i < data.list.length - 1 && <Divider />}
-              </View>
-            ))}
-            <Pager
-              page={data.page}
-              totalPages={data.totalPages}
-              onJump={goPage}
-              cap={`—  共 ${data.count} 篇收藏  —`}
-              extra={paging ? <Text style={{ fontFamily: FONTS.body, fontSize: 12, color: t.faint }}>加载中…</Text> : null}
-            />
-          </ScrollView>
+          />
         )}
     </Screen>
   );
