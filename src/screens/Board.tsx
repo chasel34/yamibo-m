@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, ScrollView, RefreshControl } from 'react-native';
+import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
 import Screen from '../components/Screen';
 import Icon from '../components/Icon';
 import { NavHeader, NavBack, FeedItem, SubBoardChip, PinnedRow, Kicker, Divider, HLine, Pager } from '../components/ui';
@@ -11,6 +12,16 @@ import { getBoard } from '../api';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ThreadRow, ThreadType, BoardSub, SortMode, PinnedItem, RootStackParamList } from '../types';
 import { SORT_MODES } from '../types';
+
+// 行模型：吸顶筛选栏占 data[0]（stickyHeaderIndices 按数据行索引吸顶），其余各占一行，
+// 让帖子行进虚拟化窗口，不再整页全量挂载。
+type BoardRow =
+  | { key: string; kind: 'filter' }
+  | { key: string; kind: 'subs' }
+  | { key: string; kind: 'pinned'; item: PinnedItem; last: boolean }
+  | { key: string; kind: 'empty' }
+  | { key: string; kind: 'thread'; item: ThreadRow; last: boolean }
+  | { key: string; kind: 'pager' };
 
 export default function BoardScreen({ route }: NativeStackScreenProps<RootStackParamList, 'board'>) {
   const board0 = route.params?.board || { name: '板块', desc: '', fid: route.params?.fid };
@@ -32,7 +43,7 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
   const [tpp, setTpp] = React.useState(20);
   const [refreshing, setRefreshing] = React.useState(false);
   const [paging, setPaging] = React.useState(false);
-  const scRef = React.useRef<ScrollView>(null);
+  const listRef = React.useRef<LegendListRef>(null);
   const requestVersion = React.useRef(0);
 
   const load = React.useCallback(async (tid: string | number, srt: SortMode, isRefresh?: boolean) => {
@@ -74,7 +85,7 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
       setTotalPages(r.totalPages);
       setTotalThreads(r.totalThreads);
       setTpp(r.tpp);
-      scRef.current?.scrollTo({ y: 0, animated: false });
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
     } catch (e) {
       if (version !== requestVersion.current) return;
       nav.toast(e.message);
@@ -85,6 +96,81 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
 
   const openSub = (s: BoardSub) => nav.push('board', { board: { fid: s.fid, name: s.name } });
   const openThread = React.useCallback((x: FeedThread) => nav.push('thread', { thread: x, board }), [nav, board]);
+
+  const rows = React.useMemo<BoardRow[]>(() => {
+    const out: BoardRow[] = [{ key: 'filter', kind: 'filter' }];
+    if (items === null) return out;
+    if (subs.length > 0) out.push({ key: 'subs', kind: 'subs' });
+    if (sort === '全部' && page === 1 && pinned.length > 0) {
+      pinned.forEach((p, i) => out.push({ key: `p:${p.id}`, kind: 'pinned', item: p, last: i === pinned.length - 1 }));
+    }
+    if (items.length === 0) out.push({ key: 'empty', kind: 'empty' });
+    else {
+      items.forEach((th, i) => out.push({ key: `t:${th.id}`, kind: 'thread', item: th, last: i === items.length - 1 }));
+      out.push({ key: 'pager', kind: 'pager' });
+    }
+    return out;
+  }, [items, subs, sort, page, pinned]);
+
+  const renderRow = React.useCallback(({ item: row }: { item: BoardRow }) => {
+    if (row.kind === 'filter') return (
+      /* sticky filter bar: 排序模式（主）+ 作品分类（次） */
+      <View style={{ backgroundColor: t.bg }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 22, gap: 22, alignItems: 'flex-end' }}>
+          {SORT_MODES.map((s) => (
+            <Pressable key={s} onPress={() => setSort(s)} style={{ paddingTop: 4, paddingBottom: 9, borderBottomWidth: 2, borderBottomColor: sort === s ? t.accent : 'transparent' }}>
+              <Text style={{ fontFamily: FONTS.head, fontSize: 15.5, fontWeight: sort === s ? '700' : '500', color: sort === s ? t.ink : t.faint }}>{s}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        {types.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 11, paddingBottom: 12, gap: 17 }}>
+            {types.map((c) => {
+              const on = typeid === c.id;
+              return (
+                <Pressable key={c.id} onPress={() => setTypeid(on ? 0 : c.id)}>
+                  <Text style={{ fontFamily: FONTS.head, fontSize: 13.5, fontWeight: on ? '700' : '500', color: on ? t.accentInk : t.faint }}>{c.name}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        ) : null}
+        <HLine />
+      </View>
+    );
+    if (row.kind === 'subs') return (
+      <View>
+        <Kicker style={{ paddingHorizontal: 22, paddingTop: 13, paddingBottom: 10 }}>子板块</Kicker>
+        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 22, paddingBottom: 14 }}>
+          {subs.map((s) => <SubBoardChip key={s.fid} s={s} onOpen={openSub} />)}
+        </View>
+        <HLine />
+      </View>
+    );
+    if (row.kind === 'pinned') return (
+      <View>
+        <PinnedRow item={row.item} onOpen={(x) => nav.push('thread', { thread: { tid: x.tid, title: x.title }, board })} />
+        {row.last && (items?.length || 0) > 0 ? <Divider /> : null}
+      </View>
+    );
+    if (row.kind === 'empty') return (
+      <EmptyState label={sort === '精华' ? '这个分类下还没有精华帖' : '这里还没有帖子'} sub="换个分类看看吧" />
+    );
+    if (row.kind === 'thread') return (
+      <View>
+        <FeedItem t={row.item} onOpen={openThread} />
+        {!row.last && <Divider />}
+      </View>
+    );
+    return (
+      <View>
+        <Divider />
+        <View style={{ opacity: paging ? 0.5 : 1, pointerEvents: paging ? 'none' : 'auto' }}>
+          <Pager page={page} totalPages={totalPages} onJump={goPage} cap={`共 ${totalThreads || (items?.length || 0)} 帖 · 每页 ${tpp} 条`} />
+        </View>
+      </View>
+    );
+  }, [t, sort, typeid, types, subs, items, pinned, paging, page, totalPages, totalThreads, tpp, board, nav, openThread]); // eslint-disable-line
 
   return (
     <Screen>
@@ -97,84 +183,24 @@ export default function BoardScreen({ route }: NativeStackScreenProps<RootStackP
       {error ? <ErrorView message={error} onRetry={() => load(typeid, sort, false)} />
         : items === null ? <Loader label="加载帖子…" />
         : (
-          <ScrollView
-            ref={scRef}
+          <LegendList
+            ref={listRef}
+            data={rows}
+            renderItem={renderRow}
+            keyExtractor={(row) => row.key}
+            recycleItems={false}
+            stickyHeaderIndices={[0]}
+            extraData={{ sort, typeid, paging, page }}
             showsVerticalScrollIndicator={false}
-            stickyHeaderIndices={[1]}
+            ListHeaderComponent={board.desc ? (
+              /* scrollable header: 板块简介 */
+              <View style={{ paddingHorizontal: 22, paddingBottom: 12 }}>
+                <Text style={{ fontFamily: FONTS.body, fontSize: 13.5, color: t.muted }}>{board.desc}</Text>
+              </View>
+            ) : null}
+            ListFooterComponent={<View style={{ height: 14 }} />}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(typeid, sort, true)} tintColor={t.accent} colors={[t.accent]} />}
-          >
-            {/* 0 — scrollable header: 板块简介 */}
-            <View>
-              {board.desc ? (
-                <View style={{ paddingHorizontal: 22, paddingBottom: 12 }}>
-                  <Text style={{ fontFamily: FONTS.body, fontSize: 13.5, color: t.muted }}>{board.desc}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            {/* 1 — sticky filter bar: 排序模式（主）+ 作品分类（次） */}
-            <View style={{ backgroundColor: t.bg }}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 22, gap: 22, alignItems: 'flex-end' }}>
-                {SORT_MODES.map((s) => (
-                  <Pressable key={s} onPress={() => setSort(s)} style={{ paddingTop: 4, paddingBottom: 9, borderBottomWidth: 2, borderBottomColor: sort === s ? t.accent : 'transparent' }}>
-                    <Text style={{ fontFamily: FONTS.head, fontSize: 15.5, fontWeight: sort === s ? '700' : '500', color: sort === s ? t.ink : t.faint }}>{s}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-              {types.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 11, paddingBottom: 12, gap: 17 }}>
-                  {types.map((c) => {
-                    const on = typeid === c.id;
-                    return (
-                      <Pressable key={c.id} onPress={() => setTypeid(on ? 0 : c.id)}>
-                        <Text style={{ fontFamily: FONTS.head, fontSize: 13.5, fontWeight: on ? '700' : '500', color: on ? t.accentInk : t.faint }}>{c.name}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              ) : null}
-              <HLine />
-            </View>
-
-            {/* 2 — 子板块（等分一排 chips）+ 置顶/公告 + feed */}
-            <View>
-              {subs.length > 0 ? (
-                <>
-                  <Kicker style={{ paddingHorizontal: 22, paddingTop: 13, paddingBottom: 10 }}>子板块</Kicker>
-                  <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 22, paddingBottom: 14 }}>
-                    {subs.map((s) => <SubBoardChip key={s.fid} s={s} onOpen={openSub} />)}
-                  </View>
-                  <HLine />
-                </>
-              ) : null}
-
-              {sort === '全部' && page === 1 && pinned.length > 0 ? (
-                <>
-                  {pinned.map((p) => <PinnedRow key={p.id} item={p} onOpen={(x) => nav.push('thread', { thread: { tid: x.tid, title: x.title }, board })} />)}
-                  {items.length > 0 ? <Divider /> : null}
-                </>
-              ) : null}
-
-              {items.length === 0 ? (
-                <EmptyState label={sort === '精华' ? '这个分类下还没有精华帖' : '这里还没有帖子'} sub="换个分类看看吧" />
-              ) : items.map((th, i) => (
-                <View key={th.id}>
-                  <FeedItem t={th} onOpen={openThread} />
-                  {i < items.length - 1 && <Divider />}
-                </View>
-              ))}
-
-              {items.length > 0 ? (
-                <>
-                  <Divider />
-                  <View style={{ opacity: paging ? 0.5 : 1, pointerEvents: paging ? 'none' : 'auto' }}>
-                    <Pager page={page} totalPages={totalPages} onJump={goPage} cap={`共 ${totalThreads || items.length} 帖 · 每页 ${tpp} 条`} />
-                  </View>
-                </>
-              ) : null}
-              <View style={{ height: 14 }} />
-            </View>
-          </ScrollView>
+          />
         )}
     </Screen>
   );

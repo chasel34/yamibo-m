@@ -37,11 +37,19 @@ npm install
 npm run proxy      # 终端 1：本地 CORS + Cookie 代理（:8089）
 npm run web        # 终端 2：浏览器 375×812 设备视口（:8085）
 
-# Android dev build（原生直连论坛，无需代理）：
-npm run build:dev
-npm run android    # 安装 dev build 后，扫码或手动输入 URL 连接 Metro
+# Android dev build（本地打包，原生直连论坛，无需代理）：
+npm run build:dev  # prebuild + gradle 打 dev client 装到已启动的模拟器/已连接真机
+npm run android    # 之后日常只跑 Metro；纯 JS 改动无需重新打包
+
+# 多台设备同时在线时指定目标：
+# APP_VARIANT=development npx expo run:android --no-bundler --device <AVD名或设备名>
+# 或把产物装到指定真机：adb -s <serial> install -r android/app/build/outputs/apk/debug/app-debug.apk
 
 # Dev build 使用独立包名 com.yamibo.reader.dev 和蓝色图标，可与正式版同时安装。
+# android/ 目录是 prebuild 生成物（已 gitignore）；改了 app.config.js/原生依赖/patches 后
+# 删掉 android/ 重新 npm run build:dev，避免带着旧配置增量构建。
+
+# 云构建备用（无本地环境时）：npm run build:dev:eas
 
 # 如需临时用 Expo Go 验证非原生模块页面：
 npm run android:go

@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~56.0.15",
+    "@legendapp/list": "3.3.5",
     "@preeternal/react-native-cookie-manager": "^6.3.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.17.2",
@@ -35,7 +36,8 @@
     "android": "expo start --dev-client",
     "android:emulator": "expo start --dev-client --android",
     "android:go": "expo start --go --android",
-    "build:dev": "npx --yes eas-cli@latest build --profile development --platform android",
+    "build:dev": "APP_VARIANT=development expo run:android --no-bundler",
+    "build:dev:eas": "npx --yes eas-cli@latest build --profile development --platform android",
     "ios": "expo start --dev-client --ios",
     "ios:go": "expo start --go --ios",
     "web": "expo start --web",
